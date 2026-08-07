@@ -86,10 +86,20 @@ class AidCommand : Runnable {
     )
     private var codeLimit: Int = 256000
 
+    @CommandLine.Option(
+        names = ["--debug-code-content"],
+        required = false,
+        defaultValue = "false",
+        description = ["Print collected code to stderr"],
+    )
+    private var debugCodeContent: Boolean = false
+
     override fun run() {
         val resolvedApiKey = apiKey ?: System.getenv("AID_API_KEY")
         val config = LlmClient.Config(url, model, connectTimeoutSec, readTimeoutSec, forceThinking, resolvedApiKey)
+
         val code: String = CodeProvider(Paths.get(projectDir), codeLimit).collect(scope)
+        if (debugCodeContent) logCode(code)
 
         val prompt = promptPath?.let {
             LlmClient.Prompt(Prompts.custom, Prompts.readUserPrompt(it), code)
@@ -100,5 +110,11 @@ class AidCommand : Runnable {
             .chat(prompt)
 
         println(result)
+    }
+
+    private fun logCode(code: String) {
+        System.err.println("[CODE] ${code.length} chars:")
+        System.err.println(code)
+        System.err.println("------")
     }
 }
