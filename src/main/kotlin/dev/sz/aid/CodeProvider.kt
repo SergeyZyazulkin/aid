@@ -13,17 +13,12 @@ class CodeProvider(dir: Path, val codeLimit: Int) {
         require(codeLimit > 0) { "Code limit must be positive: $codeLimit" }
     }
 
-    fun collect(scope: CodeScope = CodeScope.DIFF): String = when (scope) {
-        CodeScope.DIFF -> collectDiffHead()
-        CodeScope.ALL -> collectAll()
-    }
-
-    private fun collectDiffHead(): String {
-        return git.diffHead()
+    fun collectDiff(commit: String): String {
+        return git.diff(commit)
             .also { diff -> check(diff.length <= codeLimit) { "Diff (${diff.length}) exceeds $codeLimit characters" } }
     }
 
-    private fun collectAll(): String {
+    fun collectAll(): String {
         val code = StringBuilder()
         val basePath: Path = git.dir.toAbsolutePath().normalize().toRealPath()
 

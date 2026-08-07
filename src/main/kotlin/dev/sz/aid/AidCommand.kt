@@ -14,7 +14,7 @@ class AidCommand : Runnable {
         required = true,
         description = ["Target project directory to analyze"],
     )
-    private var projectDir: String = ""
+    private var projectDir = ""
 
     @CommandLine.Option(
         converter = [CodeScope.Converter::class],
@@ -23,7 +23,19 @@ class AidCommand : Runnable {
         defaultValue = "diff",
         description = ["Scope of code to analyze: diff (default), all"],
     )
-    private var scope: CodeScope = CodeScope.DIFF
+    private var scope = CodeScope.DIFF
+
+    @CommandLine.Option(
+        names = ["-C", "--commit"],
+        required = false,
+        defaultValue = "HEAD",
+        description = [
+            "Commit to diff with: can be a full SHA, short SHA,",
+            "HEAD (default), HEAD~1, a branch name, or a tag",
+            "(anything Git can resolve to a commit)",
+        ],
+    )
+    private var commit = "HEAD"
 
     @CommandLine.Option(
         names = ["-u", "--url"],
@@ -31,7 +43,7 @@ class AidCommand : Runnable {
         defaultValue = "http://127.0.0.1:11434",
         description = ["LLM server url (default: http://127.0.0.1:11434)"],
     )
-    private var url: String = "http://127.0.0.1:11434"
+    private var url = "http://127.0.0.1:11434"
 
     @CommandLine.Option(
         names = ["-k", "--api-key"],
@@ -45,7 +57,7 @@ class AidCommand : Runnable {
         required = true,
         description = ["LLM model to use"],
     )
-    private var model: String = ""
+    private var model = ""
 
     @CommandLine.Option(
         names = ["-c", "--connect-timeout"],
@@ -53,7 +65,7 @@ class AidCommand : Runnable {
         defaultValue = "10",
         description = ["LLM connect timeout in seconds (default: 10)"],
     )
-    private var connectTimeoutSec: Long = 10
+    private var connectTimeoutSec = 10L
 
     @CommandLine.Option(
         names = ["-r", "--read-timeout"],
@@ -61,7 +73,7 @@ class AidCommand : Runnable {
         defaultValue = "300",
         description = ["LLM read timeout in seconds (default: 300)"],
     )
-    private var readTimeoutSec: Long = 300
+    private var readTimeoutSec = 300L
 
     @CommandLine.Option(
         names = ["-p", "--prompt"],
@@ -76,7 +88,7 @@ class AidCommand : Runnable {
         defaultValue = "true",
         description = ["Force the model's thinking mode (Ollama-specific); may not work with generic OpenAI APIs"],
     )
-    private var forceThinking: Boolean = true
+    private var forceThinking = true
 
     @CommandLine.Option(
         names = ["-l", "--code-limit"],
@@ -84,7 +96,7 @@ class AidCommand : Runnable {
         defaultValue = "256000",
         description = ["Max allowed code length in chars"],
     )
-    private var codeLimit: Int = 256000
+    private var codeLimit = 256000
 
     @CommandLine.Option(
         names = ["--debug-code-content"],
@@ -92,13 +104,17 @@ class AidCommand : Runnable {
         defaultValue = "false",
         description = ["Print collected code to stderr"],
     )
-    private var debugCodeContent: Boolean = false
+    private var debugCodeContent = false
 
     override fun run() {
         val resolvedApiKey = apiKey ?: System.getenv("AID_API_KEY")
         val config = LlmClient.Config(url, model, connectTimeoutSec, readTimeoutSec, forceThinking, resolvedApiKey)
+        val codeProvider = CodeProvider(Paths.get(projectDir), codeLimit)
 
-        val code: String = CodeProvider(Paths.get(projectDir), codeLimit).collect(scope)
+        val code: String = when (scope) {
+            CodeScope.DIFF -> codeProvider.collectDiff(commit)
+            CodeScope.ALL -> codeProvider.collectAll()
+        }
         if (debugCodeContent) logCode(code)
 
         val prompt = promptPath?.let {

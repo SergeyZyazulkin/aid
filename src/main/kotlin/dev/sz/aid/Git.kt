@@ -12,14 +12,8 @@ class Git(val dir: Path) {
         require(Files.isRegularFile(gitConfig)) { "Missing git config in $dir" }
     }
 
-    fun diffHead(): String {
-        val cmd = if (dir.resolve(".git").resolve("refs").resolve("heads").exists()) {
-            arrayOf("git", "diff", "HEAD")
-        } else {
-            arrayOf("git", "diff", "--cached")
-        }
-
-        return dir.runProcess(*cmd)
+    fun diff(commit: String): String {
+        return dir.runProcess("git", "diff", commit)
     }
 
     fun listTextFiles(): List<String> {
