@@ -1,4 +1,4 @@
-package dev.sz
+package dev.sz.aid
 
 import picocli.CommandLine
 import java.nio.file.Paths

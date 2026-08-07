@@ -1,10 +1,10 @@
-package dev.sz
+package dev.sz.aid
 
 import java.nio.file.Paths
 import kotlin.io.path.bufferedReader
 import kotlin.io.path.exists
 
-const val BASE_PROMPT_PATH = "/prompts"
+private const val BASE_PROMPT_PATH = "/prompts"
 
 object Prompts {
 

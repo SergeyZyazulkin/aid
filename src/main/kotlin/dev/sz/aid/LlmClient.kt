@@ -1,6 +1,7 @@
-package dev.sz
+package dev.sz.aid
 
 import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -109,13 +110,13 @@ class LlmClient(val config: Config) {
     }
 }
 
-@kotlinx.serialization.Serializable
+@Serializable
 private data class ChatMessage(
     val role: String,
     val content: String
 )
 
-@kotlinx.serialization.Serializable
+@Serializable
 private data class ChatCompletionRequest(
     val model: String,
     val messages: List<ChatMessage>,
@@ -126,7 +127,7 @@ private data class ChatCompletionRequest(
     @SerialName("extra_body")
     val extraBody: ExtraBody? = null
 ) {
-    @kotlinx.serialization.Serializable
+    @Serializable
     data class ExtraBody(
         @SerialName("enable_thinking")
         val enableThinking: Boolean = true,
@@ -137,13 +138,13 @@ private data class ChatCompletionRequest(
     )
 }
 
-@kotlinx.serialization.Serializable
+@Serializable
 private data class ChatCompletionResponse(
     val id: String? = null,
     val choices: List<Choice> = emptyList(),
     val usage: Usage? = null
 ) {
-    @kotlinx.serialization.Serializable
+    @Serializable
     data class Choice(
         val index: Int,
         val message: ChatMessage? = null,
@@ -151,7 +152,7 @@ private data class ChatCompletionResponse(
         val finishReason: String? = null
     )
 
-    @kotlinx.serialization.Serializable
+    @Serializable
     data class Usage(
         @SerialName("prompt_tokens")
         val promptTokens: Int? = null,

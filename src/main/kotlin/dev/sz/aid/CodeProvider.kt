@@ -1,4 +1,4 @@
-package dev.sz
+package dev.sz.aid
 
 import java.nio.file.Path
 import java.nio.file.Paths

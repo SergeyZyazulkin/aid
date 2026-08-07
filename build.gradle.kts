@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "dev.sz"
-version = "0.0.1"
+version = "1.0.0"
 
 repositories {
     mavenCentral()
@@ -21,7 +21,7 @@ dependencies {
 }
 
 application {
-    mainClass.set("dev.sz.MainKt")
+    mainClass.set("dev.sz.aid.MainKt")
     applicationName = "aid"
 }
 

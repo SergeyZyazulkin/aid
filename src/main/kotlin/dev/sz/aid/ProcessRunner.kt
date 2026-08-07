@@ -1,4 +1,4 @@
-package dev.sz
+package dev.sz.aid
 
 import kotlinx.coroutines.*
 import java.nio.file.Path
