@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "dev.sz"
-version = "1.2.0"
+version = "1.2.1"
 
 repositories {
     mavenCentral()
@@ -17,7 +17,11 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:5.4.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.1")
+
     testImplementation(kotlin("test"))
+    testImplementation("io.mockk:mockk:1.14.11")
+    testImplementation("io.kotest:kotest-assertions-core:6.2.2")
+    testImplementation("com.squareup.okhttp3:mockwebserver3-junit5:5.4.0")
 }
 
 application {

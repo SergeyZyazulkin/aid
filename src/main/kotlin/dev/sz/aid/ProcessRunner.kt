@@ -2,9 +2,10 @@ package dev.sz.aid
 
 import kotlinx.coroutines.*
 import java.nio.file.Path
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
-fun Path.runProcess(vararg command: String): String = runBlocking {
+fun Path.runProcess(vararg command: String, timeout: Duration = 60.seconds): String = runBlocking {
     // can't merge stderr into stdout because Git puts warnings
     // and other messages into stderr even when the exit code is 0
     val process = ProcessBuilder(*command)
@@ -13,7 +14,7 @@ fun Path.runProcess(vararg command: String): String = runBlocking {
         .start()
 
     try {
-        withTimeout(60.seconds) {
+        withTimeout(timeout) {
             // can't read streams sequentially as they may block independently due to the full buffer
             val stdoutDeferred: Deferred<String> = async(Dispatchers.IO) {
                 process.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
@@ -22,7 +23,7 @@ fun Path.runProcess(vararg command: String): String = runBlocking {
                 process.errorStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
             }
 
-            val exitCode: Int = withContext(Dispatchers.IO) { process.waitFor() }
+            val exitCode: Int = runInterruptible(Dispatchers.IO) { process.waitFor() }
             val (stdout, stderr) = awaitAll(stdoutDeferred, stderrDeferred)
 
             if (exitCode != 0) {

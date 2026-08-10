@@ -22,7 +22,8 @@ class LlmClient(val config: Config) {
     private val json = Json {
         ignoreUnknownKeys = true
         prettyPrint = false
-        encodeDefaults = false
+        encodeDefaults = true
+        explicitNulls = false
     }
 
     fun chat(prompt: Prompt): String {
@@ -95,7 +96,7 @@ class LlmClient(val config: Config) {
             ChatCompletionRequest.ExtraBody(
                 enableThinking = true,
                 thinkingBudget = 512,
-                preserveThinking = true
+                preserveThinking = true,
             )
         } else {
             null
