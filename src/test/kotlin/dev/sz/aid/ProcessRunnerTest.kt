@@ -1,6 +1,8 @@
 package dev.sz.aid
 
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldStartWith
 import io.mockk.*
 import org.junit.jupiter.api.assertThrows
 import java.io.ByteArrayOutputStream
@@ -49,7 +51,7 @@ class ProcessRunnerTest {
 
         assertThrows<IllegalStateException> {
             tempDir.runProcess("test")
-        }.message?.contains("exit code 1") shouldBe true
+        }.message.shouldContain("exit code 1")
     }
 
     @Test
@@ -66,7 +68,7 @@ class ProcessRunnerTest {
 
         assertThrows<IllegalStateException> {
             tempDir.runProcess("test", timeout = 100.milliseconds)
-        }.message?.contains("timed out") shouldBe true
+        }.message.shouldContain("timed out")
     }
 
     @Test
@@ -91,6 +93,6 @@ class ProcessRunnerTest {
             System.setErr(originalErr)
         }
         val capturedStr = String(captured.toByteArray(), Charsets.UTF_8)
-        capturedStr.startsWith(randomOutput) shouldBe true
+        capturedStr.shouldStartWith(randomOutput)
     }
 }

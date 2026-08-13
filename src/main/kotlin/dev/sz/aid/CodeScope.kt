@@ -4,6 +4,7 @@ import picocli.CommandLine
 
 enum class CodeScope {
     ALL,
+    SOURCES,
     DIFF;
 
     class Converter : CommandLine.ITypeConverter<CodeScope> {

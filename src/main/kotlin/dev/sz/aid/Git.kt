@@ -15,10 +15,19 @@ class Git(val dir: Path) {
     fun diff(commit: String): String {
         return dir.runProcess("git", "diff", commit)
     }
+    fun listTextFiles(): List<String> = listTextFiles(emptyList())
 
-    fun listTextFiles(): List<String> {
-        // git ls-files can't filter out binary files
-        return dir.runProcess("git", "grep", "-Il", ".")
+    fun listTextFiles(paths: List<String>): List<String> {
+        val command = buildList {
+            // git ls-files can't filter out binary files
+            addAll(listOf("git", "grep", "-Il", "."))
+            if (paths.isNotEmpty()) {
+                add("--")
+                addAll(paths)
+            }
+        }.toTypedArray()
+
+        return dir.runProcess(*command)
             .lines()
             .filter { it.isNotBlank() }
     }

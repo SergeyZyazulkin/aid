@@ -1,6 +1,7 @@
 package dev.sz.aid
 
 import picocli.CommandLine
+import java.nio.file.Path
 import java.nio.file.Paths
 
 @CommandLine.Command(
@@ -14,7 +15,7 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
         required = true,
         description = ["Target project directory to analyze"],
     )
-    var projectDir = ""
+    var projectDir: Path = Paths.get(".")
         private set
 
     @CommandLine.Option(
@@ -22,7 +23,7 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
         names = ["-s", "--scope"],
         required = false,
         defaultValue = "diff",
-        description = ["Scope of code to analyze: diff (default), all"],
+        description = ["Scope of code to analyze: diff (default), all, sources (specified with --sources option)"],
     )
     var scope = CodeScope.DIFF
         private set
@@ -38,6 +39,18 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
         ],
     )
     var commit = "HEAD"
+        private set
+
+    @CommandLine.Option(
+        names = ["-S", "--sources"],
+        required = false,
+        description = [
+            "Source directories/files from the target project to",
+            "analyze (repeatable, one per repeat); relative paths",
+            "are resolved against the target project directory",
+        ],
+    )
+    var sources = emptyList<String>()
         private set
 
     @CommandLine.Option(
@@ -121,19 +134,20 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
     override fun run() {
         val resolvedApiKey = apiKey ?: environment["AID_API_KEY"]
         val config = LlmClient.Config(url, model, connectTimeoutSec, readTimeoutSec, forceThinking, resolvedApiKey)
-        val codeProvider = CodeProvider(Paths.get(projectDir), codeLimit)
-
-        val code: String = when (scope) {
-            CodeScope.DIFF -> codeProvider.collectDiff(commit)
-            CodeScope.ALL -> codeProvider.collectAll()
-        }
+        val code: String = CodeProvider(projectDir, codeLimit).collectCode()
         if (debugCodeContent) logCode(code)
-
         val prompt = buildPrompt(code)
-        val result: String = LlmClient(config)
-            .chat(prompt)
-
+        val result: String = LlmClient(config).chat(prompt)
         println(result)
+    }
+
+    private fun CodeProvider.collectCode(): String = when (scope) {
+        CodeScope.DIFF -> collectDiff(commit)
+        CodeScope.ALL -> collectAll()
+        CodeScope.SOURCES -> {
+            require(sources.isNotEmpty()) { "At least one --sources option must be specified" }
+            collectFiles(sources)
+        }
     }
 
     private fun buildPrompt(code: String): LlmClient.Prompt = promptPath?.let {

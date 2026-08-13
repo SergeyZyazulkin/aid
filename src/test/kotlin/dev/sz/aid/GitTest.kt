@@ -1,6 +1,7 @@
 package dev.sz.aid
 
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.mockk.every
 import io.mockk.mockkStatic
 import io.mockk.unmockkAll
@@ -25,7 +26,7 @@ class GitTest {
 
         assertThrows<IllegalArgumentException> {
             Git(notExistingDir)
-        }.message?.contains("Target directory does not exist") shouldBe true
+        }.message.shouldContain("Target directory does not exist")
     }
 
     @Test
@@ -34,7 +35,7 @@ class GitTest {
         Files.createDirectories(fakeGitDir.resolve(".git")) // config missing
         assertThrows<IllegalArgumentException> {
             Git(fakeGitDir)
-        }.message?.contains("Missing git config") shouldBe true
+        }.message.shouldContain("Missing git config")
     }
 
     @Test

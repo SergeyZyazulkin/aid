@@ -1,6 +1,8 @@
 package dev.sz.aid
 
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotBeEmpty
 import org.junit.jupiter.api.assertThrows
 import java.nio.file.Files
 import kotlin.io.path.absolutePathString
@@ -11,19 +13,19 @@ class PromptsTest {
 
     @Test
     fun `review prompt loads from resources`() {
-        Prompts.review.isNotEmpty() shouldBe true
+        Prompts.review.shouldNotBeEmpty()
     }
 
     @Test
     fun `custom prompt loads from resources`() {
-        Prompts.custom.isNotEmpty() shouldBe true
+        Prompts.custom.shouldNotBeEmpty()
     }
 
     @Test
     fun `readUserPrompt fails on missing file`() {
         assertThrows<IllegalArgumentException> {
             Prompts.readUserPrompt("/nonexistent/file.md")
-        }.message?.contains("Prompt file does not exist") shouldBe true
+        }.message.shouldContain("Prompt file does not exist")
     }
 
     @Test

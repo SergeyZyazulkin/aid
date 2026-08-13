@@ -1,6 +1,7 @@
 package dev.sz.aid
 
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkConstructor
@@ -27,7 +28,7 @@ class LlmClientTest {
                 connectTimeoutSec = 1L,
                 readTimeoutSec = 1L,
             )
-        }.message?.contains("Not a valid HTTP(S) URL") shouldBe true
+        }.message.shouldContain("Not a valid HTTP(S) URL")
     }
 
     @Test
@@ -105,6 +106,6 @@ class LlmClientTest {
         )
         assertThrows<IOException> {
             client.chat(prompt)
-        }.message?.contains("LLM HTTP 401 Unauthorized") shouldBe true
+        }.message.shouldContain("LLM HTTP 401 Unauthorized")
     }
 }
