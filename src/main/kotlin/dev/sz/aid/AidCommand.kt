@@ -131,13 +131,28 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
     var debugCodeContent = false
         private set
 
+    @CommandLine.Option(
+        names = ["--dry-run"],
+        required = false,
+        defaultValue = "false",
+        description = ["Print the LLM request JSON and exit without calling the LLM"]
+    )
+    var dryRun: Boolean = false
+        private set
+
     override fun run() {
         val resolvedApiKey = apiKey ?: environment["AID_API_KEY"]
         val config = LlmClient.Config(url, model, connectTimeoutSec, readTimeoutSec, forceThinking, resolvedApiKey)
         val code: String = CodeProvider(projectDir, codeLimit).collectCode()
         if (debugCodeContent) logCode(code)
         val prompt = buildPrompt(code)
-        val result: String = LlmClient(config).chat(prompt)
+        val client = LlmClient(config)
+
+        val result: String = if (dryRun) {
+            client.dryRun(prompt)
+        } else {
+            client.chat(prompt)
+        }
         println(result)
     }
 

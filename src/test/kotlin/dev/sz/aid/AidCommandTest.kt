@@ -380,4 +380,46 @@ class AidCommandTest {
             }
         }
     }
+
+    @Test
+    fun `--dry-run prints request JSON and skips LLM call`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("source.txt"), "some code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        // start the server to check that it wasn't called
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+
+            val originalOut = System.out
+            val captured = ByteArrayOutputStream()
+            try {
+                System.setOut(PrintStream(captured, true, Charsets.UTF_8))
+
+                CommandLine(AidCommand())
+                    .execute(
+                        "-d", gitDir.absolutePathString(),
+                        "-m", "test",
+                        "-s", "all",
+                        "-u", llmServer.url("/").toString(),
+                        "--dry-run",
+                    )
+            } finally {
+                System.setOut(originalOut)
+            }
+            String(captured.toByteArray(), Charsets.UTF_8)
+                .shouldStartWith("{")
+                .shouldContain("\"model\"")
+                .shouldContain("\"messages\"")
+                .shouldContain("\"role\"")
+                .shouldContain("\"system\"")
+                .shouldContain("\"user\"")
+                .shouldContain("\"content\"")
+                .shouldContain("some code")
+
+            llmServer.requestCount shouldBe 0
+        }
+    }
 }

@@ -14,16 +14,24 @@ import java.util.concurrent.TimeUnit
 
 class LlmClient(val config: Config) {
 
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(config.connectTimeoutSec, TimeUnit.SECONDS)
-        .readTimeout(config.readTimeoutSec, TimeUnit.SECONDS)
-        .build()
+    private val httpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(config.connectTimeoutSec, TimeUnit.SECONDS)
+            .readTimeout(config.readTimeoutSec, TimeUnit.SECONDS)
+            .build()
+    }
 
     private val json = Json {
         ignoreUnknownKeys = true
         prettyPrint = false
         encodeDefaults = true
         explicitNulls = false
+    }
+
+    private val prettyJson by lazy {
+        Json(json) {
+            prettyPrint = true
+        }
     }
 
     fun chat(prompt: Prompt): String {
@@ -52,6 +60,8 @@ class LlmClient(val config: Config) {
         return response.choices.firstOrNull()?.message?.content
             ?: throw IOException("No LLM response message: $responseBody")
     }
+
+    fun dryRun(prompt: Prompt): String = prettyJson.encodeToString(prompt.toRequest())
 
     data class Config(
         val url: String,
