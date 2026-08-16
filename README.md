@@ -4,15 +4,16 @@ A lightweight CLI code assistant that leverages local Ollama instances (or any O
 
 ## Features
 
-- **Zero-Config Git Context**: Automatically extracts uncommitted diffs or all tracked files based on your `--scope`.
-- **OpenAI-Compatible Endpoint**: Connects to `/v1/chat/completions`, making it compatible with Ollama, local LLM runners, and cloud APIs.
-- **Customizable Prompts**: Swap the default structured PR reviewer for a custom interaction mode using your own prompts.
+- **Flexible Git Context**: Analyze uncommitted changes (`diff`), the entire tracked codebase (`all`), or specific source paths/files (`sources`).
+- **OpenAI-Compatible API**: Connects to `/v1/chat/completions`, making it compatible with Ollama, local LLM runners, and cloud APIs.
+- **Customizable Prompts**: Use the default PR reviewer or swap it for a custom interaction mode using your own prompt.
+- **Dry Run & Debugging**: Preview the exact LLM request JSON without sending it (`--dry-run`), or print collected code to stderr (`--debug-code-content`).
 
 ## Prerequisites
 
 - **Java 25+**
 - **Git** (target directory must contain `.git/config`)
-- **Ollama** or compatible API server
+- **Ollama** or any OpenAI-compatible API server
 
 ## Installation & Usage
 
@@ -21,16 +22,39 @@ A lightweight CLI code assistant that leverages local Ollama instances (or any O
 ./gradlew instDist
 ```
 
-### Usage
+### Show usage
 ```sh
 build/install/aid/bin/aid
-build/install/aid/bin/aid.bat
 ```
 
-### Run
+### Set key (Windows)
 ```sh
-build/install/aid/bin/aid -d="/path/to/repo" -m="model_name"
-build/install/aid/bin/aid.bat -d="/path/to/repo" -m="model_name"
+@set AID_API_KEY=<key>
+```
+
+### Set key (Linux)
+```sh
+export AID_API_KEY=<key>
+```
+
+### Analyze entire tracked codebase
+```sh
+build/install/aid/bin/aid -d=<repo_path> -m=<model_name> -s=all -u=<api_url> > <output_path>
+```
+
+### Review uncommitted changes vs HEAD
+```sh
+build/install/aid/bin/aid -d=<repo_path> -m=<model_name> -s=diff -u=<api_url> > <output_path>
+```
+
+### Review N last commits
+```sh
+build/install/aid/bin/aid -d=<repo_path> -m=<model_name> -s=diff -C=HEAD~<N> -u=<api_url> > <output_path>
+```
+
+### Custom prompt about entire tracked codebase
+```sh
+build/install/aid/bin/aid -d=<repo_path> -m=<model_name> -s=all -u=<api_url> -p=<prompt_path> > <output_path>
 ```
 
 ## Configuration & Prompts
