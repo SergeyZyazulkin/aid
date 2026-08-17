@@ -140,6 +140,16 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
     var dryRun: Boolean = false
         private set
 
+    @CommandLine.Option(
+        names = ["--lang"],
+        required = false,
+        defaultValue = "en",
+        converter = [OutputLanguage.Converter::class],
+        description = ["Output language: en (default), ru"],
+    )
+    var lang = OutputLanguage.EN
+        private set
+
     override fun run() {
         val resolvedApiKey = apiKey ?: environment["AID_API_KEY"]
         val config = LlmClient.Config(url, model, connectTimeoutSec, readTimeoutSec, forceThinking, resolvedApiKey)
@@ -165,9 +175,13 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
         }
     }
 
-    private fun buildPrompt(code: String): LlmClient.Prompt = promptPath?.let {
-        LlmClient.Prompt(Prompts.custom, Prompts.readUserPrompt(it), code)
-    } ?: LlmClient.Prompt(Prompts.review, null, code)
+    private fun buildPrompt(code: String): LlmClient.Prompt {
+        val baseSystemMessage: String = if (promptPath != null) Prompts.custom else Prompts.review
+        val langDirective = lang.directiveResource?.let { Prompts.readSystemDirective(it) }
+        val systemMessage: String = langDirective?.let { "$baseSystemMessage\n\n$it" } ?: baseSystemMessage
+        val userMessage: String? = promptPath?.let { Prompts.readUserPrompt(it) }
+        return LlmClient.Prompt(systemMessage, userMessage, code)
+    }
 
     private fun logCode(code: String) {
         System.err.println("[CODE] ${code.length} chars:")

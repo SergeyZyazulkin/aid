@@ -8,6 +8,7 @@ A lightweight CLI code assistant that leverages local Ollama instances (or any O
 - **OpenAI-Compatible API**: Connects to `/v1/chat/completions`, making it compatible with Ollama, local LLM runners, and cloud APIs.
 - **Customizable Prompts**: Use the default PR reviewer or swap it for a custom interaction mode using your own prompt.
 - **Dry Run & Debugging**: Preview the exact LLM request JSON without sending it (`--dry-run`), or print collected code to stderr (`--debug-code-content`).
+- **Configurable output language**: Supports English and Russian.
 
 ## Prerequisites
 
@@ -63,6 +64,9 @@ The tool ships with two built-in system prompts in `src/main/resources/prompts/`
 
 - **`review.md`** (default): Structured PR reviewer focused on long-term codebase health, blocking issues, and concrete refactoring suggestions.
 - **`custom.md`**: Senior engineer interaction mode for direct Q&A and iterative development help.
+
+Also, there is one built-in directive in `src/main/resources/prompts/directives/`:
+- **`ru.md`**: Switching output language to Russian.
 
 To use a custom prompt, pass the file path to `--prompt`.
 

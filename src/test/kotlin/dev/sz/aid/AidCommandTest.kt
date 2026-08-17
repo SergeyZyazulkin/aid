@@ -18,12 +18,13 @@ import java.nio.file.Paths
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.absolutePathString
 import kotlin.io.path.createTempDirectory
+import kotlin.io.path.createTempFile
 import kotlin.io.path.name
 
 class AidCommandTest {
 
     @Test
-    fun `parses required arguments correctly`() {
+    fun `parses required and default arguments correctly`() {
         val cmd = CommandLine.populateCommand(
             AidCommand(),
             "-d", "/test/repo",
@@ -42,6 +43,7 @@ class AidCommandTest {
         cmd.forceThinking shouldBe false
         cmd.codeLimit shouldBe 256000
         cmd.debugCodeContent shouldBe false
+        cmd.lang shouldBe OutputLanguage.EN
     }
 
     @Test
@@ -74,6 +76,17 @@ class AidCommandTest {
     }
 
     @Test
+    fun `parses ru lang`() {
+        val cmd = CommandLine.populateCommand(
+            AidCommand(),
+            "--dir", "/test/repo",
+            "--model", "test",
+            "--lang", "ru",
+        )
+        cmd.lang shouldBe OutputLanguage.RU
+    }
+
+    @Test
     fun `rejects invalid scope`() {
         assertThrows<CommandLine.ParameterException> {
             CommandLine.populateCommand(
@@ -83,6 +96,18 @@ class AidCommandTest {
                 "--scope", "invalid",
             )
         }.message.shouldContain("Invalid value for option '--scope'")
+    }
+
+    @Test
+    fun `rejects invalid language`() {
+        assertThrows<CommandLine.ParameterException> {
+            CommandLine.populateCommand(
+                AidCommand(),
+                "--dir", "/test/repo",
+                "--model", "test",
+                "--lang", "invalid",
+            )
+        }.message.shouldContain("Invalid value for option '--lang'")
     }
 
     @Test
@@ -420,6 +445,114 @@ class AidCommandTest {
                 .shouldContain("some code")
 
             llmServer.requestCount shouldBe 0
+        }
+    }
+
+    @Test
+    fun `--lang ru appends Russian directive to system prompt`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder()
+                    .code(200)
+                    .body("{\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"отлично\"}}]}")
+                    .build()
+            )
+
+            CommandLine(AidCommand())
+                .execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                    "--lang", "ru",
+                )
+
+            llmServer.takeRequest(0, TimeUnit.SECONDS) shouldNotBeNull {
+                body shouldNotBeNull {
+                    string(Charsets.UTF_8).shouldContain("## Language")
+                        .shouldContain("Respond entirely in Russian")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `--lang en does not append language directive`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder()
+                    .code(200)
+                    .body("{\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"ok\"}}]}")
+                    .build()
+            )
+
+            CommandLine(AidCommand())
+                .execute(
+                    "--dir", gitDir.absolutePathString(),
+                    "--model", "test",
+                    "--scope", "all",
+                    "--url", llmServer.url("/").toString(),
+                    "--lang", "en",
+                )
+
+            llmServer.takeRequest(0, TimeUnit.SECONDS) shouldNotBeNull {
+                body shouldNotBeNull {
+                    string(Charsets.UTF_8).shouldNotContain("## Language")
+                        .shouldNotContain("Respond entirely in Russian")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `--lang ru with custom prompt still appends directive`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        val customPrompt = createTempFile("custom-prompt", ".md")
+        Files.write(customPrompt, "Проанализируй код на предмет наличия багов.\n".toByteArray())
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder().code(200)
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"багов нет"}}]}""")
+                    .build()
+            )
+
+            CommandLine(AidCommand()).execute(
+                "-d", gitDir.absolutePathString(),
+                "-m", "test",
+                "-s", "all",
+                "-u", llmServer.url("/").toString(),
+                "--prompt", customPrompt.absolutePathString(),
+                "--lang", "ru",
+            )
+
+            llmServer.takeRequest(0, TimeUnit.SECONDS) shouldNotBeNull {
+                body shouldNotBeNull {
+                    string(Charsets.UTF_8).shouldContain("Проанализируй код на предмет наличия багов.")
+                        .shouldContain("## Language")
+                        .shouldContain("Respond entirely in Russian")
+                }
+            }
         }
     }
 }

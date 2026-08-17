@@ -5,6 +5,7 @@ import kotlin.io.path.bufferedReader
 import kotlin.io.path.exists
 
 private const val BASE_PROMPT_PATH = "/prompts"
+private const val DIRECTIVE_DIR = "directives"
 
 object Prompts {
 
@@ -19,6 +20,8 @@ object Prompts {
             .use { it.readText() }
             .trim()
     }
+
+    fun readSystemDirective(name: String): String = readSystemPrompt("$DIRECTIVE_DIR/$name")
 
     private fun readSystemPrompt(name: String): String = javaClass
         .getResourceAsStream("$BASE_PROMPT_PATH/$name")
