@@ -4,6 +4,7 @@ import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldMatch
 import io.kotest.matchers.string.shouldNotContain
 import io.kotest.matchers.string.shouldStartWith
 import mockwebserver3.MockResponse
@@ -553,6 +554,61 @@ class AidCommandTest {
                         .shouldContain("Respond entirely in Russian")
                 }
             }
+        }
+    }
+
+    @Test
+    fun `--progress logs steps to stderr with timestamps`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder().code(200)
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"LLM output"}}]}""")
+                    .build()
+            )
+
+            val originalOut = System.out
+            val outBuf = ByteArrayOutputStream()
+            val originalErr = System.err
+            val errBuf = ByteArrayOutputStream()
+            try {
+                System.setOut(PrintStream(outBuf, true, Charsets.UTF_8))
+                System.setErr(PrintStream(errBuf, true, Charsets.UTF_8))
+
+                CommandLine(AidCommand()).execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                    "--progress",
+                )
+            } finally {
+                System.setOut(originalOut)
+                System.setErr(originalErr)
+            }
+
+            val stderr = String(errBuf.toByteArray(), Charsets.UTF_8)
+            stderr.shouldContain("Collecting code...")
+                .shouldContain("Building prompt...")
+                .shouldContain("Sending request to LLM...")
+                .shouldContain("Printing result...")
+                .shouldContain("Completed in ")
+            // Each line must start with a timestamp
+            stderr.lines()
+                .filter { it.isNotBlank() }
+                .forEach { line ->
+                    line.shouldMatch(Regex("^\\[\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}] .+"))
+                }
+
+            // stdout should still contain only the LLM result
+            String(outBuf.toByteArray(), Charsets.UTF_8)
+                .shouldStartWith("LLM output")
         }
     }
 }

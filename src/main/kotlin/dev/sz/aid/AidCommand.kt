@@ -150,20 +150,40 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
     var lang = OutputLanguage.EN
         private set
 
+    @CommandLine.Option(
+        names = ["--progress"],
+        required = false,
+        defaultValue = "false",
+        description = ["Log progress to stderr"],
+    )
+    var progress = false
+        private set
+
     override fun run() {
+        val progressLogger = ProgressLogger(enabled = progress)
         val resolvedApiKey = apiKey ?: environment["AID_API_KEY"]
         val config = LlmClient.Config(url, model, connectTimeoutSec, readTimeoutSec, forceThinking, resolvedApiKey)
+
+        progressLogger.log("Collecting code...")
         val code: String = CodeProvider(projectDir, codeLimit).collectCode()
         if (debugCodeContent) logCode(code)
-        val prompt = buildPrompt(code)
-        val client = LlmClient(config)
 
+        progressLogger.log("Building prompt...")
+        val prompt: LlmClient.Prompt = buildPrompt(code)
+
+        val client = LlmClient(config)
         val result: String = if (dryRun) {
             client.dryRun(prompt)
         } else {
-            client.chat(prompt)
+            progressLogger.log("Sending request to LLM...")
+            progressLogger.startWaitLogging(intervalSec = 10).use {
+                client.chat(prompt)
+            }
         }
+
+        progressLogger.log("Printing result...")
         println(result)
+        progressLogger.logCompletion()
     }
 
     private fun CodeProvider.collectCode(): String = when (scope) {
