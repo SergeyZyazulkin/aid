@@ -35,6 +35,7 @@ class AidCommandTest {
         cmd.scope shouldBe CodeScope.DIFF
         cmd.commit shouldBe "HEAD"
         cmd.sources shouldBe emptyList()
+        cmd.fileFilters shouldBe emptyList()
         cmd.url shouldBe "http://127.0.0.1:11434"
         cmd.apiKey shouldBe null
         cmd.model shouldBe "llama3"
@@ -85,6 +86,18 @@ class AidCommandTest {
             "--lang", "ru",
         )
         cmd.lang shouldBe OutputLanguage.RU
+    }
+
+    @Test
+    fun `parses filter option correctly`() {
+        val cmd = CommandLine.populateCommand(
+            AidCommand(),
+            "-d", "/test/repo",
+            "-m", "model",
+            "-f", "*.java",
+            "-f", "**.kt",
+        )
+        cmd.fileFilters shouldBe listOf("*.java", "**.kt")
     }
 
     @Test
@@ -175,8 +188,8 @@ class AidCommandTest {
             } finally {
                 System.setOut(originalOut)
             }
-            val capturedStr = String(captured.toByteArray(), Charsets.UTF_8)
-            capturedStr.shouldStartWith("review")
+            String(captured.toByteArray(), Charsets.UTF_8)
+                .shouldStartWith("review")
         }
     }
 
@@ -216,8 +229,8 @@ class AidCommandTest {
             } finally {
                 System.setOut(originalOut)
             }
-            val capturedStr = String(captured.toByteArray(), Charsets.UTF_8)
-            capturedStr.shouldStartWith("custom")
+            String(captured.toByteArray(), Charsets.UTF_8)
+                .shouldStartWith("custom")
         }
     }
 
@@ -249,7 +262,8 @@ class AidCommandTest {
 
             llmServer.takeRequest(0, TimeUnit.SECONDS) shouldNotBeNull {
                 body shouldNotBeNull {
-                    string(Charsets.UTF_8).shouldContain("\"enable_thinking\"")
+                    string(Charsets.UTF_8)
+                        .shouldContain("\"enable_thinking\"")
                 }
             }
         }
@@ -397,11 +411,11 @@ class AidCommandTest {
 
             llmServer.takeRequest(0, TimeUnit.SECONDS) shouldNotBeNull {
                 body shouldNotBeNull {
-                    val strBody = string(Charsets.UTF_8)
-                    strBody.shouldContain(file1.name)
-                    strBody.shouldNotContain(file2.name)
-                    strBody.shouldContain(file3.name)
-                    strBody.shouldNotContain(file4.name)
+                    string(Charsets.UTF_8)
+                        .shouldContain(file1.name)
+                        .shouldNotContain(file2.name)
+                        .shouldContain(file3.name)
+                        .shouldNotContain(file4.name)
                 }
             }
         }
@@ -477,7 +491,8 @@ class AidCommandTest {
 
             llmServer.takeRequest(0, TimeUnit.SECONDS) shouldNotBeNull {
                 body shouldNotBeNull {
-                    string(Charsets.UTF_8).shouldContain("## Language")
+                    string(Charsets.UTF_8)
+                        .shouldContain("## Language")
                         .shouldContain("Respond entirely in Russian")
                 }
             }
@@ -512,7 +527,8 @@ class AidCommandTest {
 
             llmServer.takeRequest(0, TimeUnit.SECONDS) shouldNotBeNull {
                 body shouldNotBeNull {
-                    string(Charsets.UTF_8).shouldNotContain("## Language")
+                    string(Charsets.UTF_8)
+                        .shouldNotContain("## Language")
                         .shouldNotContain("Respond entirely in Russian")
                 }
             }
@@ -549,7 +565,8 @@ class AidCommandTest {
 
             llmServer.takeRequest(0, TimeUnit.SECONDS) shouldNotBeNull {
                 body shouldNotBeNull {
-                    string(Charsets.UTF_8).shouldContain("Проанализируй код на предмет наличия багов.")
+                    string(Charsets.UTF_8)
+                        .shouldContain("Проанализируй код на предмет наличия багов.")
                         .shouldContain("## Language")
                         .shouldContain("Respond entirely in Russian")
                 }
@@ -609,6 +626,89 @@ class AidCommandTest {
             // stdout should still contain only the LLM result
             String(outBuf.toByteArray(), Charsets.UTF_8)
                 .shouldStartWith("LLM output")
+        }
+    }
+
+    @Test
+    fun `full run with scope 'all' and filter includes only matching files`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        val srcDir = gitDir.resolve("src")
+        Files.createDirectories(srcDir)
+        Files.write(srcDir.resolve("App.java"), "public class App {}".toByteArray())
+        Files.write(srcDir.resolve("Main.kt"), "fun main() {}".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder()
+                    .code(200)
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}""")
+                    .build()
+            )
+
+            CommandLine(AidCommand())
+                .execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-f", "**.java",
+                    "-u", llmServer.url("/").toString(),
+                )
+
+            llmServer.takeRequest(0, TimeUnit.SECONDS) shouldNotBeNull {
+                body shouldNotBeNull {
+                    string(Charsets.UTF_8)
+                        .shouldContain("App.java")
+                        .shouldContain("public class App {}")
+                        .shouldNotContain("Main.kt")
+                        .shouldNotContain("fun main() {}")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `full run with scope 'sources' and filter includes only matching files`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        val srcDir = gitDir.resolve("src")
+        Files.createDirectories(srcDir)
+        Files.write(srcDir.resolve("App.java"), "public class App {}".toByteArray())
+        Files.write(srcDir.resolve("Main.kt"), "fun main() {}".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder()
+                    .code(200)
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}""")
+                    .build()
+            )
+
+            CommandLine(AidCommand())
+                .execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "sources",
+                    "-S", "src",
+                    "-f", "src/*.kt",
+                    "-u", llmServer.url("/").toString(),
+                )
+
+            llmServer.takeRequest(0, TimeUnit.SECONDS) shouldNotBeNull {
+                body shouldNotBeNull {
+                    string(Charsets.UTF_8)
+                        .shouldContain("Main.kt")
+                        .shouldContain("fun main() {}")
+                        .shouldNotContain("App.java")
+                        .shouldNotContain("public class App {}")
+                }
+            }
         }
     }
 }

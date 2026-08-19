@@ -23,7 +23,10 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
         names = ["-s", "--scope"],
         required = false,
         defaultValue = "diff",
-        description = ["Scope of code to analyze: diff (default), all, sources (specified with --sources option)"],
+        description = [
+            "Scope of code to analyze: diff (default), all,",
+            "sources (specified with --sources option)",
+        ],
     )
     var scope = CodeScope.DIFF
         private set
@@ -46,11 +49,25 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
         required = false,
         description = [
             "Source directories/files from the target project to",
-            "analyze (repeatable, one per repeat); relative paths",
-            "are resolved against the target project directory",
+            "analyze (repeatable, one per repeat); relative",
+            "paths are resolved against the target project ",
+            "directory",
         ],
     )
     var sources = emptyList<String>()
+        private set
+
+    @CommandLine.Option(
+        names = ["-f", "--filter"],
+        required = false,
+        description = [
+            "Glob pattern to filter included files by relative",
+            "path (repeatable); matched against the git-relative",
+            "path, e.g. --filter '**.java' --filter 'src/*.kt';",
+            "applies to 'all' and 'sources' scopes only",
+        ],
+    )
+    var fileFilters = emptyList<String>()
         private set
 
     @CommandLine.Option(
@@ -65,7 +82,10 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
     @CommandLine.Option(
         names = ["-k", "--api-key"],
         required = false,
-        description = ["LLM server API key (falls back to AID_API_KEY env var)"],
+        description = [
+            "LLM server API key (falls back to",
+            "AID_API_KEY env var)",
+        ],
     )
     var apiKey: String? = null
         private set
@@ -108,7 +128,10 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
         names = ["-t", "--force-thinking"],
         required = false,
         defaultValue = "false",
-        description = ["Force the model's thinking mode (Ollama-specific); may not work with generic OpenAI APIs"],
+        description = [
+            "Force the model's thinking mode (Ollama-specific);",
+            "may not work with generic OpenAI APIs",
+        ],
     )
     var forceThinking = false
         private set
@@ -135,7 +158,10 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
         names = ["--dry-run"],
         required = false,
         defaultValue = "false",
-        description = ["Print the LLM request JSON and exit without calling the LLM"]
+        description = [
+            "Print the LLM request JSON and exit",
+            "without calling the LLM",
+        ]
     )
     var dryRun: Boolean = false
         private set
@@ -188,10 +214,10 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
 
     private fun CodeProvider.collectCode(): String = when (scope) {
         CodeScope.DIFF -> collectDiff(commit)
-        CodeScope.ALL -> collectAll()
+        CodeScope.ALL -> collectAll(fileFilters)
         CodeScope.SOURCES -> {
             require(sources.isNotEmpty()) { "At least one --sources option must be specified" }
-            collectFiles(sources)
+            collectFiles(sources, fileFilters)
         }
     }
 
