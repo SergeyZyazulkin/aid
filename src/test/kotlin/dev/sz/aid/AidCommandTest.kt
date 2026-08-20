@@ -156,6 +156,45 @@ class AidCommandTest {
     }
 
     @Test
+    fun `fails with explicit error when diff produces no changes`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "content\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        // No uncommitted changes — git diff HEAD is empty
+        assertThrows<IllegalArgumentException> {
+            CommandLine.populateCommand(
+                AidCommand(),
+                "-d", gitDir.absolutePathString(),
+                "-m", "test",
+                "-s", "diff",
+            ).run()
+        }.message.shouldContain("No code collected (result is blank)")
+    }
+
+    @Test
+    fun `fails with explicit error when filter matches no files`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("App.java"), "public class App {}".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        // Filter matches only .xml files, but repo has only .java — blank result
+        assertThrows<IllegalArgumentException> {
+            CommandLine.populateCommand(
+                AidCommand(),
+                "-d", gitDir.absolutePathString(),
+                "-m", "test",
+                "-s", "all",
+                "-f", "**.xml",
+            ).run()
+        }.message.shouldContain("No code collected (result is blank)")
+    }
+
+    @Test
     fun `full run with review prompt`() {
         val gitDir = createTempDirectory("aid-test-")
         gitDir.runProcess("git", "init")

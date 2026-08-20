@@ -192,6 +192,7 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
 
         progressLogger.log("Collecting code...")
         val code: String = CodeProvider(projectDir, codeLimit).collectCode()
+        require(code.isNotBlank()) { "No code collected (result is blank)" }
         if (debugCodeContent) logCode(code)
 
         progressLogger.log("Building prompt...")
