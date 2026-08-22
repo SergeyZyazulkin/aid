@@ -12,23 +12,26 @@ class Git(val dir: Path) {
         require(Files.isRegularFile(gitConfig)) { "Missing git config in $dir" }
     }
 
-    fun diff(commit: String): String {
-        return dir.runProcess("git", "diff", commit)
+    fun diff(commit: String, pathspecs: List<String> = emptyList()): String {
+        val command = listOf("git", "diff", commit).withPathspecs(pathspecs)
+        return dir.runProcess(*command)
     }
+
     fun listTextFiles(): List<String> = listTextFiles(emptyList())
 
-    fun listTextFiles(paths: List<String>): List<String> {
-        val command = buildList {
-            // git ls-files can't filter out binary files
-            addAll(listOf("git", "grep", "-Il", "."))
-            if (paths.isNotEmpty()) {
-                add("--")
-                addAll(paths)
-            }
-        }.toTypedArray()
+    fun listTextFiles(pathspecs: List<String>): List<String> {
+        // git ls-files can't filter out binary files
+        val command = listOf("git", "grep", "-Il", ".").withPathspecs(pathspecs)
 
         return dir.runProcess(*command)
             .lines()
             .filter { it.isNotBlank() }
     }
+
+    private fun List<String>.withPathspecs(pathspecs: List<String>): Array<String> =
+        if (pathspecs.isEmpty()) {
+            this
+        } else {
+            this + listOf("--") + pathspecs
+        }.toTypedArray()
 }

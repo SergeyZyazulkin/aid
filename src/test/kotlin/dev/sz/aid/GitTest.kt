@@ -46,10 +46,8 @@ class GitTest {
         mockkStatic(Path::runProcess)
         every { tempGitDir.runProcess(*anyVararg()) } returns ""
 
-        val git = Git(tempGitDir)
         val ref = Uuid.random().toString()
-        git.diff(ref)
-
+        Git(tempGitDir).diff(ref)
         verify { tempGitDir.runProcess("git", "diff", ref) }
     }
 
@@ -63,5 +61,41 @@ class GitTest {
 
         Git(tempGitDir).listTextFiles() shouldBe listOf("test", "test2")
         verify { tempGitDir.runProcess("git", "grep", "-Il", ".") }
+    }
+
+    @Test
+    fun `diff with pathspecs passes them after double-dash`() {
+        val tempGitDir = createTempDirectory("aid-test-git-")
+        tempGitDir.runProcess("git", "init")
+
+        mockkStatic(Path::runProcess)
+        every { tempGitDir.runProcess(*anyVararg()) } returns ""
+
+        Git(tempGitDir).diff("HEAD", listOf(":(exclude)build/", "*.kt"))
+        verify { tempGitDir.runProcess("git", "diff", "HEAD", "--", ":(exclude)build/", "*.kt") }
+    }
+
+    @Test
+    fun `diff without pathspecs omits double-dash`() {
+        val tempGitDir = createTempDirectory("aid-test-git-")
+        tempGitDir.runProcess("git", "init")
+
+        mockkStatic(Path::runProcess)
+        every { tempGitDir.runProcess(*anyVararg()) } returns ""
+
+        Git(tempGitDir).diff("HEAD")
+        verify { tempGitDir.runProcess("git", "diff", "HEAD") }
+    }
+
+    @Test
+    fun `listTextFiles with pathspecs passes them after double-dash`() {
+        val tempGitDir = createTempDirectory("aid-test-git-")
+        tempGitDir.runProcess("git", "init")
+
+        mockkStatic(Path::runProcess)
+        every { tempGitDir.runProcess(*anyVararg()) } returns ""
+
+        Git(tempGitDir).listTextFiles(listOf("src/"))
+        verify { tempGitDir.runProcess("git", "grep", "-Il", ".", "--", "src/") }
     }
 }

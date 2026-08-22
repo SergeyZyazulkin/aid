@@ -144,7 +144,7 @@ class AidCommandTest {
         val gitDir = createTempDirectory("aid-test-")
         gitDir.runProcess("git", "init")
 
-        assertThrows<IllegalArgumentException> {
+        assertThrows<IllegalStateException> {
             CommandLine.populateCommand(
                 AidCommand(),
                 "-d", gitDir.absolutePathString(),
@@ -152,7 +152,7 @@ class AidCommandTest {
                 "-s", "sources",
                 "-S", "",
             ).run()
-        }.message.shouldContain("Blank path")
+        }.message.shouldContain("empty string is not a valid pathspec")
     }
 
     @Test
@@ -746,6 +746,51 @@ class AidCommandTest {
                         .shouldContain("fun main() {}")
                         .shouldNotContain("App.java")
                         .shouldNotContain("public class App {}")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `full run with diff scope and sources`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        val srcDir = gitDir.resolve("src")
+        Files.createDirectories(srcDir)
+        val appJava = srcDir.resolve("App.java")
+        Files.write(appJava, "public class App {}\n".toByteArray())
+        val notesTxt = gitDir.resolve("notes.txt")
+        Files.write(notesTxt, "some notes\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+        // introduce changes
+        Files.write(srcDir.resolve(appJava), "public class App { int x; }\n".toByteArray())
+        Files.write(gitDir.resolve(notesTxt), "some notes 2\n".toByteArray())
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder()
+                    .code(200)
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}""")
+                    .build()
+            )
+
+            CommandLine(AidCommand())
+                .execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "diff",
+                    "-S", ":!**.txt",
+                    "-u", llmServer.url("/").toString(),
+                )
+
+            llmServer.takeRequest(0, TimeUnit.SECONDS) shouldNotBeNull {
+                body shouldNotBeNull {
+                    string(Charsets.UTF_8)
+                        .shouldContain("App.java")
+                        // pathspec excludes it
+                        .shouldNotContain("notes.txt")
                 }
             }
         }

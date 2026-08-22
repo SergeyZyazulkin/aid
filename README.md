@@ -5,7 +5,7 @@ A lightweight CLI code assistant that leverages local Ollama instances (or any O
 ## Features
 
 - **Flexible Git Context**: Analyze uncommitted changes (`diff`), the entire tracked codebase (`all`), or specific source paths/files (`sources`).
-- **File filters**: Selected dirs/files (`--sources`) and glob patterns on relative paths (`--filter`).
+- **Scope filters**: Limit scope with Git pathspecs (`--sources`) and glob patterns (`--filter`).
 - **OpenAI-Compatible API**: Connects to `/v1/chat/completions`, making it compatible with Ollama, local LLM runners, and cloud APIs.
 - **Customizable Prompts**: Use the default PR reviewer or swap it for a custom interaction mode using your own prompt.
 - **Dry Run & Debugging**: Preview the exact LLM request JSON without sending it (`--dry-run`), or print collected code to stderr (`--debug-code-content`).

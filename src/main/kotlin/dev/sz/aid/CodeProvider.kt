@@ -5,11 +5,12 @@ import java.nio.file.Path
 import java.nio.file.PathMatcher
 import java.nio.file.Paths
 import java.util.regex.PatternSyntaxException
-import kotlin.io.path.absolutePathString
 import kotlin.io.path.fileSize
 import kotlin.io.path.readText
-import kotlin.io.path.relativeTo
 
+// All pathspec parameters in this class are raw Git pathspecs.
+// They are passed verbatim to Git commands and must NOT be
+// resolved, normalized, or otherwise transformed as filesystem paths.
 class CodeProvider(dir: Path, val codeLimit: Int) {
 
     private val git: Git = Git(dir)
@@ -18,26 +19,29 @@ class CodeProvider(dir: Path, val codeLimit: Int) {
         require(codeLimit > 0) { "Code limit must be positive: $codeLimit" }
     }
 
-    fun collectDiff(commit: String): String {
-        return git.diff(commit)
+    /**
+     * [pathspecs] are Git pathspecs defining files included in diff.
+     * Full diff on empty [pathspecs].
+     */
+    fun collectDiff(commit: String, pathspecs: List<String>): String {
+        return git.diff(commit, pathspecs)
             .also { diff -> check(diff.length <= codeLimit) { "Diff (${diff.length}) exceeds $codeLimit characters" } }
     }
 
     fun collectAll(filters: List<String> = emptyList()): String = collectFiles(emptyList(), filters)
 
     /**
-     * [paths] defines paths in the project to collect from.
-     * Collects everything from the project on empty [paths].
+     * [pathspecs] are Git pathspecs defining files in the project to collect from.
+     * Collects everything from the project on empty [pathspecs].
      * [filters] are glob patterns matched against the file paths returned by Git.
      * When non-empty, only files matching at least one pattern are included.
      */
-    fun collectFiles(paths: List<String>, filters: List<String> = emptyList()): String {
+    fun collectFiles(pathspecs: List<String>, filters: List<String> = emptyList()): String {
         val code = StringBuilder()
         val basePath: Path = git.dir.toAbsolutePath().normalize().toRealPath()
-        val resolvedPaths: List<String> = basePath.resolveRelatively(paths)
         val fileMatchers: List<PathMatcher> = filters.toPathMatchers()
 
-        git.listTextFiles(resolvedPaths)
+        git.listTextFiles(pathspecs)
             .filter { file -> fileMatchers.matchesAny(file) }
             .forEach { file ->
                 val filePath: Path = basePath.resolve(Paths.get(file)).normalize().toRealPath()
@@ -54,17 +58,6 @@ class CodeProvider(dir: Path, val codeLimit: Int) {
             }
 
         return code.toString()
-    }
-
-    private fun Path.resolveRelatively(paths: List<String>): List<String> {
-        return paths.map { strPath ->
-            require(strPath.isNotBlank()) { "Blank path: '$strPath'" }
-            val resolvedAbsolute = resolve(strPath).toAbsolutePath().normalize().toRealPath()
-            require(resolvedAbsolute.startsWith(this)) {
-                "Path '$strPath' ($resolvedAbsolute) escapes ${absolutePathString()}"
-            }
-            resolvedAbsolute.relativeTo(this).toString()
-        }
     }
 
     private fun List<String>.toPathMatchers(): List<PathMatcher> = map { pattern ->

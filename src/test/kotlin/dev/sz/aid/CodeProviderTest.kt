@@ -6,9 +6,9 @@ import io.kotest.matchers.string.shouldNotContain
 import io.mockk.every
 import io.mockk.mockkConstructor
 import io.mockk.unmockkAll
+import io.mockk.verify
 import org.junit.jupiter.api.assertThrows
 import java.nio.file.Files
-import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.Paths
 import kotlin.io.path.createTempDirectory
@@ -32,10 +32,10 @@ class CodeProviderTest {
         val expectedDiff = "some random diff"
 
         mockkConstructor(Git::class)
-        every { anyConstructed<Git>().diff(any()) } returns expectedDiff
+        every { anyConstructed<Git>().diff(any(), any()) } returns expectedDiff
 
-        val provider = CodeProvider(gitDir, codeLimit = 1_000_000)
-        provider.collectDiff("HEAD~1") shouldBe expectedDiff
+        CodeProvider(gitDir, codeLimit = 1_000_000)
+            .collectDiff("HEAD~1", emptyList()) shouldBe expectedDiff
     }
 
     @Test
@@ -94,17 +94,16 @@ class CodeProviderTest {
     @Test
     fun `collectFiles fails on non-existent specified directory`() {
         val nonExistent = Paths.get("nonexistent", "path").toString()
-        assertThrows<NoSuchFileException> {
+        assertThrows<IllegalStateException> {
             CodeProvider(gitDir, codeLimit = 1_000).collectFiles(listOf(nonExistent))
         }
     }
 
     @Test
     fun `collectFiles rejects escaping paths`() {
-        assertThrows<IllegalArgumentException> {
+        assertThrows<IllegalStateException> {
             CodeProvider(gitDir, codeLimit = 10).collectFiles(listOf(".."))
-        }.message.shouldContain("Path '..'")
-            .shouldContain("escapes")
+        }.message.shouldContain("outside repository")
     }
 
     @Test
@@ -207,5 +206,31 @@ class CodeProviderTest {
 
         CodeProvider(gitDir, codeLimit = 100)
             .collectFiles(emptyList(), listOf("**.xml")) shouldBe ""
+    }
+
+    @Test
+    fun `collectDiff delegates pathspecs to git`() {
+        val expectedDiff = "diff with filters"
+        mockkConstructor(Git::class)
+        every { anyConstructed<Git>().diff(any(), any()) } returns expectedDiff
+
+        CodeProvider(gitDir, codeLimit = 1_000_000)
+            .collectDiff("HEAD~1", listOf("src/", ":(exclude)*.min.js")) shouldBe expectedDiff
+
+        verify { anyConstructed<Git>().diff("HEAD~1", listOf("src/", ":(exclude)*.min.js")) }
+    }
+
+    @Test
+    fun `collectFiles accepts git magic pathspecs`() {
+        val sourceDir: Path = gitDir.resolve("src/main/kotlin")
+        Files.createDirectories(sourceDir)
+        Files.write(sourceDir.resolve("App.kt"), "fun main() {}".toByteArray())
+
+        mockkConstructor(Git::class)
+        every { anyConstructed<Git>().listTextFiles(any()) } returns listOf("src/main/kotlin/App.kt")
+
+        CodeProvider(gitDir, codeLimit = 10_000)
+            .collectFiles(listOf(":(exclude)build/"), emptyList())
+            .shouldContain("src/main/kotlin/App.kt")
     }
 }

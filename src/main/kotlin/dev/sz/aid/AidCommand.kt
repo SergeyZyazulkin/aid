@@ -48,10 +48,11 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
         names = ["-S", "--sources"],
         required = false,
         description = [
-            "Source directories/files from the target project to",
-            "analyze (repeatable, one per repeat); relative",
-            "paths are resolved against the target project ",
-            "directory",
+            "Git pathspecs limiting the analysis scope",
+            "(repeatable). Applies to 'diff' and 'sources'",
+            "scopes. Supports plain paths, glob patterns and Git",
+            "magic prefixes (e.g. ':(exclude)build/', '*.kt',",
+            "':(top)src/').",
         ],
     )
     var sources = emptyList<String>()
@@ -214,7 +215,7 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
     }
 
     private fun CodeProvider.collectCode(): String = when (scope) {
-        CodeScope.DIFF -> collectDiff(commit)
+        CodeScope.DIFF -> collectDiff(commit, sources)
         CodeScope.ALL -> collectAll(fileFilters)
         CodeScope.SOURCES -> {
             require(sources.isNotEmpty()) { "At least one --sources option must be specified" }
