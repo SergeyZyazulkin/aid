@@ -186,6 +186,18 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
     var progress = false
         private set
 
+    @CommandLine.Option(
+        names = ["--stream"],
+        required = false,
+        defaultValue = "false",
+        description = [
+            "Enable streaming mode: write partial results to",
+            "stdout as they are received from the LLM",
+        ],
+    )
+    var stream = false
+        private set
+
     override fun run() {
         val progressLogger = ProgressLogger(enabled = progress)
         val resolvedApiKey = apiKey ?: environment["AID_API_KEY"]
@@ -200,17 +212,12 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
         val prompt: LlmClient.Prompt = buildPrompt(code)
 
         val client = LlmClient(config)
-        val result: String = if (dryRun) {
-            client.dryRun(prompt)
-        } else {
-            progressLogger.log("Sending request to LLM...")
-            progressLogger.startWaitLogging(intervalSec = 10).use {
-                client.chat(prompt)
-            }
+        when {
+            dryRun -> client.renderDryRun(prompt, progressLogger)
+            stream -> client.renderStreamChat(prompt, progressLogger)
+            else -> client.renderChat(prompt, progressLogger)
         }
 
-        progressLogger.log("Printing result...")
-        println(result)
         progressLogger.logCompletion()
     }
 
@@ -235,5 +242,44 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
         System.err.println("[CODE] ${code.length} chars:")
         System.err.println(code)
         System.err.println("------")
+    }
+
+    private fun LlmClient.renderDryRun(prompt: LlmClient.Prompt, progressLogger: ProgressLogger) {
+        val result = renderDryRun(prompt, stream)
+        progressLogger.log("Printing result...")
+        println(result)
+    }
+
+    private fun LlmClient.renderStreamChat(prompt: LlmClient.Prompt, progressLogger: ProgressLogger) {
+        progressLogger.log("Sending streaming request to LLM...")
+        var printingStarted = false
+        var waitLogger: AutoCloseable = progressLogger.startWaitLogging(intervalSec = 10)
+        try {
+            chatStream(
+                prompt,
+                onDelta = { delta ->
+                    if (!printingStarted) {
+                        waitLogger.close()
+                        printingStarted = true
+                        progressLogger.log("Printing result...")
+                        waitLogger = progressLogger.startWaitLogging(intervalSec = 10)
+                    }
+                    print(delta)
+                    System.out.flush() // explicit flushing
+                },
+            )
+        } finally {
+            waitLogger.close()
+        }
+        println() // trailing newline after streamed output
+    }
+
+    private fun LlmClient.renderChat(prompt: LlmClient.Prompt, progressLogger: ProgressLogger) {
+        progressLogger.log("Sending request to LLM...")
+        val result = progressLogger.startWaitLogging(intervalSec = 10).use {
+            chat(prompt)
+        }
+        progressLogger.log("Printing result...")
+        println(result)
     }
 }

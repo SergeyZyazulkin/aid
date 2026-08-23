@@ -8,6 +8,7 @@ A lightweight CLI code assistant that leverages local Ollama instances (or any O
 - **Scope filters**: Limit scope with Git pathspecs (`--sources`) and glob patterns (`--filter`).
 - **OpenAI-Compatible API**: Connects to `/v1/chat/completions`, making it compatible with Ollama, local LLM runners, and cloud APIs.
 - **Customizable Prompts**: Use the default PR reviewer or swap it for a custom interaction mode using your own prompt.
+- **Streaming mode**: Read partial LLM results in real time with `--stream`.
 - **Dry Run & Debugging**: Preview the exact LLM request JSON without sending it (`--dry-run`), or print collected code to stderr (`--debug-code-content`).
 - **Configurable output language**: Supports English and Russian.
 
@@ -57,6 +58,11 @@ build/install/aid/bin/aid -d=<repo_path> -m=<model_name> -s=diff -C=HEAD~<N> -u=
 ### Custom prompt about entire tracked codebase
 ```sh
 build/install/aid/bin/aid -d=<repo_path> -m=<model_name> -s=all -u=<api_url> -p=<prompt_path> > <output_path>
+```
+
+### Stream partial results with progress tracking
+```sh
+build/install/aid/bin/aid -d=<repo_path> -m=<model_name> -s=all -u=<api_url> --stream --progress > <output_path>
 ```
 
 ## Configuration & Prompts

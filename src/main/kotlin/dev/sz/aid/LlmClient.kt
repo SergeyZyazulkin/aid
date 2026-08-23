@@ -2,6 +2,7 @@ package dev.sz.aid
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -9,6 +10,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okio.BufferedSource
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
@@ -35,24 +37,14 @@ class LlmClient(val config: Config) {
     }
 
     fun chat(prompt: Prompt): String {
-        val requestModel: ChatCompletionRequest = prompt.toRequest()
-        val requestJson = json.encodeToString(requestModel)
-        val baseUrl = config.url.removeSuffix("/")
-
-        val request = Request.Builder()
-            .url("$baseUrl/v1/chat/completions")
-            .addHeader("Content-Type", "application/json")
-            .apply { config.apiKey?.let { apiKey -> addHeader("Authorization", "Bearer $apiKey") } }
-            .post(requestJson.toRequestBody("application/json".toMediaType()))
-            .build()
+        val request: Request = buildChatRequest(prompt, stream = false)
 
         val responseBody = httpClient.newCall(request).execute().use { response ->
-            val responseBody = response.body.string() // body is guaranteed to be non-null in any case
+            val body = response.body.string() // body is guaranteed to be non-null in any case
             if (!response.isSuccessful) {
-                throw IOException(
-                    "LLM HTTP ${response.code} ${response.message}: $responseBody\nHeaders: ${response.headers}")
+                throw IOException("LLM HTTP ${response.code} ${response.message}: $body\nHeaders: ${response.headers}")
             }
-            responseBody
+            body
         }
 
         val response: ChatCompletionResponse = json.decodeFromString(responseBody)
@@ -61,7 +53,64 @@ class LlmClient(val config: Config) {
             ?: throw IOException("No LLM response message: $responseBody")
     }
 
-    fun dryRun(prompt: Prompt): String = prettyJson.encodeToString(prompt.toRequest())
+    fun chatStream(prompt: Prompt, onDelta: (String) -> Unit) {
+        val request: Request = buildChatRequest(prompt, stream = true)
+
+        httpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                val body = response.body.string() // body is guaranteed to be non-null in any case
+                throw IOException("LLM HTTP ${response.code} ${response.message}: $body\nHeaders: ${response.headers}")
+            }
+
+            val contentType = response.header("Content-Type")?.lowercase() ?: ""
+            if (!contentType.contains("text/event-stream")) {
+                val body = response.body.string() // body is guaranteed to be non-null in any case
+                throw IOException("Expected SSE stream but got Content-Type: $contentType\nBody: $body")
+            }
+
+            response.body.source().use { source ->
+                parseSseStream(source).forEach { data ->
+                    val chunk: ChatCompletionStreamResponse = try {
+                        json.decodeFromString(data)
+                    } catch (e: SerializationException) {
+                        throw IllegalStateException("Invalid LLM data: $data", e)
+                    }
+                    val content = chunk.choices.firstOrNull()?.delta?.content
+                    if (!content.isNullOrEmpty()) onDelta(content)
+                }
+            }
+        }
+    }
+
+    // single-line data only; sufficient for OpenAI-compatible SSE
+    private fun parseSseStream(source: BufferedSource): Sequence<String> = sequence {
+        while (!source.exhausted()) {
+            val line = source.readUtf8Line() ?: break
+            if (!line.startsWith("data:")) continue
+            val data = line.removePrefix("data:").trim()
+            if (data == "[DONE]") break
+            yield(data)
+        }
+    }
+
+    private fun buildChatRequest(prompt: Prompt, stream: Boolean): Request {
+        val requestModel: ChatCompletionRequest = prompt.toRequest(stream)
+        val requestJson = json.encodeToString(requestModel)
+        val baseUrl = config.url.removeSuffix("/")
+
+        return Request.Builder()
+            .url("$baseUrl/v1/chat/completions")
+            .addHeader("Content-Type", "application/json")
+            .apply {
+                if (stream) addHeader("Accept", "text/event-stream")
+                config.apiKey?.let { addHeader("Authorization", "Bearer $it") }
+            }
+            .post(requestJson.toRequestBody("application/json".toMediaType()))
+            .build()
+    }
+
+    fun renderDryRun(prompt: Prompt, isStream: Boolean): String =
+        prettyJson.encodeToString(prompt.toRequest(isStream))
 
     data class Config(
         val url: String,
@@ -96,7 +145,7 @@ class LlmClient(val config: Config) {
             }
     }
 
-    private fun Prompt.toRequest(): ChatCompletionRequest {
+    private fun Prompt.toRequest(stream: Boolean): ChatCompletionRequest {
         val chatMessages: List<ChatMessage> = listOf(
             ChatMessage("system", systemMessage),
             ChatMessage("user", combinedUserMessage)
@@ -115,7 +164,7 @@ class LlmClient(val config: Config) {
         return ChatCompletionRequest(
             model = config.model,
             messages = chatMessages,
-            stream = false,
+            stream = stream,
             extraBody = thinkingConfig,
         )
     }
@@ -171,5 +220,26 @@ private data class ChatCompletionResponse(
         val completionTokens: Int? = null,
         @SerialName("total_tokens")
         val totalTokens: Int? = null
+    )
+}
+
+@Serializable
+private data class ChatCompletionStreamResponse(
+    val id: String? = null,
+    val obj: String? = null,
+    val choices: List<StreamChoice> = emptyList(),
+) {
+    @Serializable
+    data class StreamChoice(
+        val index: Int,
+        val delta: StreamDelta? = null,
+        @SerialName("finish_reason")
+        val finishReason: String? = null
+    )
+
+    @Serializable
+    data class StreamDelta(
+        val role: String? = null,
+        val content: String? = null
     )
 }

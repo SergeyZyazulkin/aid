@@ -108,4 +108,196 @@ class LlmClientTest {
             client.chat(prompt)
         }.message.shouldContain("LLM HTTP 401 Unauthorized")
     }
+
+    @Test
+    fun `chatStream parses SSE and invokes callbacks`() {
+        val config = LlmClient.Config(
+            url = "http://localhost:1234",
+            model = "dummy",
+            connectTimeoutSec = 5,
+            readTimeoutSec = 60,
+        )
+
+        val sseBody = buildString {
+            appendLine("data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hel\"},\"finish_reason\":null}]}")
+            appendLine()
+            appendLine("data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"lo\"},\"finish_reason\":null}]}")
+            appendLine()
+            appendLine("data: [DONE]")
+            appendLine()
+        }
+
+        val mockCall = mockk<Call>()
+        mockkConstructor(OkHttpClient::class)
+        every { anyConstructed<OkHttpClient>().newCall(any()) } returns mockCall
+        every { mockCall.execute() } answers {
+            Response.Builder()
+                .request(Request.Builder().url(config.url).build())
+                .protocol(Protocol.HTTP_1_1)
+                .code(200)
+                .headers(Headers.Builder()
+                    .add("Content-Type", "text/event-stream")
+                    .build())
+                .message("OK")
+                .body(sseBody.toResponseBody("text/event-stream".toMediaType()))
+                .build()
+        }
+
+        val deltas = mutableListOf<String>()
+        val client = LlmClient(config)
+        client.chatStream(
+            prompt = LlmClient.Prompt("sys", null, "code"),
+            onDelta = { deltas.add(it) },
+        )
+        deltas shouldBe listOf("Hel", "lo")
+    }
+
+    @Test
+    fun `chatStream throws on HTTP error`() {
+        val config = LlmClient.Config(
+            url = "http://localhost:1234",
+            model = "dummy",
+            connectTimeoutSec = 5,
+            readTimeoutSec = 60,
+        )
+
+        val mockCall = mockk<Call>()
+        mockkConstructor(OkHttpClient::class)
+        every { anyConstructed<OkHttpClient>().newCall(any()) } returns mockCall
+        every { mockCall.execute() } answers {
+            Response.Builder()
+                .request(Request.Builder().url(config.url).build())
+                .protocol(Protocol.HTTP_1_1)
+                .code(500)
+                .message("Internal Server Error")
+                .body("boom".toResponseBody("text/plain".toMediaType()))
+                .build()
+        }
+
+        val client = LlmClient(config)
+        assertThrows<IOException> {
+            client.chatStream(
+                prompt = LlmClient.Prompt("sys", null, "code"),
+                onDelta = {},
+            )
+        }.message.shouldContain("LLM HTTP 500")
+    }
+
+    @Test
+    fun `chatStream throws on malformed SSE JSON`() {
+        val config = LlmClient.Config(
+            url = "http://localhost:1234",
+            model = "dummy",
+            connectTimeoutSec = 5,
+            readTimeoutSec = 60,
+        )
+
+        val sseBody = buildString {
+            appendLine("data: {not a valid json}")
+            appendLine()
+            appendLine("data: [DONE]")
+            appendLine()
+        }
+
+        val mockCall = mockk<Call>()
+        mockkConstructor(OkHttpClient::class)
+        every { anyConstructed<OkHttpClient>().newCall(any()) } returns mockCall
+        every { mockCall.execute() } answers {
+            Response.Builder()
+                .request(Request.Builder().url(config.url).build())
+                .protocol(Protocol.HTTP_1_1)
+                .code(200)
+                .message("OK")
+                .headers(Headers.Builder()
+                    .add("Content-Type", "text/event-stream")
+                    .build())
+                .body(sseBody.toResponseBody("text/event-stream".toMediaType()))
+                .build()
+        }
+
+        val client = LlmClient(config)
+        assertThrows<IllegalStateException> {
+            client.chatStream(
+                prompt = LlmClient.Prompt("sys", null, "code"),
+                onDelta = {},
+            )
+        }.message.shouldContain("Invalid LLM data: {not a valid json}")
+    }
+
+    @Test
+    fun `chatStream throws on unexpected response content type`() {
+        val config = LlmClient.Config(
+            url = "http://localhost:1234",
+            model = "dummy",
+            connectTimeoutSec = 5,
+            readTimeoutSec = 60,
+        )
+
+        val mockCall = mockk<Call>()
+        mockkConstructor(OkHttpClient::class)
+        every { anyConstructed<OkHttpClient>().newCall(any()) } returns mockCall
+        every { mockCall.execute() } answers {
+            Response.Builder()
+                .request(Request.Builder().url(config.url).build())
+                .protocol(Protocol.HTTP_1_1)
+                .code(200)
+                .message("OK")
+                .headers(Headers.Builder()
+                    .add("Content-Type", "text/plain")
+                    .build())
+                .body("body".toResponseBody("text/plain".toMediaType()))
+                .build()
+        }
+
+        val client = LlmClient(config)
+        assertThrows<IOException> {
+            client.chatStream(
+                prompt = LlmClient.Prompt("sys", null, "code"),
+                onDelta = {},
+            )
+        }.message.shouldContain("Expected SSE stream but got Content-Type: text/plain\nBody: body")
+    }
+
+    @Test
+    fun `chatStream handles empty choices and no content`() {
+        val config = LlmClient.Config(
+            url = "http://localhost:1234",
+            model = "dummy",
+            connectTimeoutSec = 5,
+            readTimeoutSec = 60,
+        )
+
+        val sseBody = buildString {
+            appendLine("data: {\"id\":\"1\",\"choices\":[]}")
+            appendLine()
+            appendLine("data: {\"id\":\"1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null}}]}")
+            appendLine()
+            appendLine("data: [DONE]")
+            appendLine()
+        }
+
+        val mockCall = mockk<Call>()
+        mockkConstructor(OkHttpClient::class)
+        every { anyConstructed<OkHttpClient>().newCall(any()) } returns mockCall
+        every { mockCall.execute() } answers {
+            Response.Builder()
+                .request(Request.Builder().url(config.url).build())
+                .protocol(Protocol.HTTP_1_1)
+                .code(200)
+                .message("OK")
+                .headers(Headers.Builder()
+                    .add("Content-Type", "text/event-stream")
+                    .build())
+                .body(sseBody.toResponseBody("text/event-stream".toMediaType()))
+                .build()
+        }
+
+        val deltas = mutableListOf<String>()
+        val client = LlmClient(config)
+        client.chatStream(
+            prompt = LlmClient.Prompt("sys", null, "code"),
+            onDelta = { deltas.add(it) },
+        )
+        deltas shouldBe emptyList()
+    }
 }

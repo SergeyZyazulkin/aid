@@ -9,6 +9,7 @@ import io.kotest.matchers.string.shouldNotContain
 import io.kotest.matchers.string.shouldStartWith
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
+import okhttp3.Headers
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import picocli.CommandLine
@@ -46,6 +47,7 @@ class AidCommandTest {
         cmd.codeLimit shouldBe 256000
         cmd.debugCodeContent shouldBe false
         cmd.lang shouldBe OutputLanguage.EN
+        cmd.stream shouldBe false
     }
 
     @Test
@@ -98,6 +100,17 @@ class AidCommandTest {
             "-f", "**.kt",
         )
         cmd.fileFilters shouldBe listOf("*.java", "**.kt")
+    }
+
+    @Test
+    fun `parses stream option correctly`() {
+        val cmd = CommandLine.populateCommand(
+            AidCommand(),
+            "-d", "/test/repo",
+            "-m", "llama3",
+            "--stream",
+        )
+        cmd.stream shouldBe true
     }
 
     @Test
@@ -791,6 +804,66 @@ class AidCommandTest {
                         .shouldContain("App.java")
                         // pathspec excludes it
                         .shouldNotContain("notes.txt")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `full run in streaming mode`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        val sseBody = buildString {
+            appendLine("data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hello\"},\"finish_reason\":null}]}")
+            appendLine()
+            appendLine("data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" world\"},\"finish_reason\":null}]}")
+            appendLine()
+            appendLine("data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"!\"},\"finish_reason\":\"stop\"}]}")
+            appendLine()
+            appendLine("data: [DONE]")
+            appendLine()
+        }
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder()
+                    .code(200)
+                    .headers(Headers.Builder()
+                        .add("Content-Type", "text/event-stream")
+                        .build())
+                    .body(sseBody)
+                    .build()
+            )
+
+            val originalOut = System.out
+            val captured = ByteArrayOutputStream()
+            try {
+                System.setOut(PrintStream(captured, true, Charsets.UTF_8))
+
+                CommandLine(AidCommand())
+                    .execute(
+                        "-d", gitDir.absolutePathString(),
+                        "-m", "test",
+                        "-s", "all",
+                        "-u", llmServer.url("/").toString(),
+                        "--stream",
+                    )
+            } finally {
+                System.setOut(originalOut)
+            }
+
+            String(captured.toByteArray(), Charsets.UTF_8)
+                .shouldContain("Hello world!")
+
+            llmServer.takeRequest(0, TimeUnit.SECONDS) shouldNotBeNull {
+                body shouldNotBeNull {
+                    string(Charsets.UTF_8)
+                        .shouldContain("\"stream\":true")
                 }
             }
         }
