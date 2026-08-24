@@ -199,26 +199,25 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
         private set
 
     override fun run() {
-        val progressLogger = ProgressLogger(enabled = progress)
-        val resolvedApiKey = apiKey ?: environment["AID_API_KEY"]
-        val config = LlmClient.Config(url, model, connectTimeoutSec, readTimeoutSec, forceThinking, resolvedApiKey)
+        ProgressLogger(enabled = progress).use { progressLogger ->
+            val resolvedApiKey = apiKey ?: environment["AID_API_KEY"]
+            val config = LlmClient.Config(url, model, connectTimeoutSec, readTimeoutSec, forceThinking, resolvedApiKey)
 
-        progressLogger.log("Collecting code...")
-        val code: String = CodeProvider(projectDir, codeLimit).collectCode()
-        require(code.isNotBlank()) { "No code collected (result is blank)" }
-        if (debugCodeContent) logCode(code)
+            progressLogger.progress("Collecting code...")
+            val code: String = CodeProvider(projectDir, codeLimit).collectCode()
+            require(code.isNotBlank()) { "No code collected (result is blank)" }
+            if (debugCodeContent) logCode(code)
 
-        progressLogger.log("Building prompt...")
-        val prompt: LlmClient.Prompt = buildPrompt(code)
+            progressLogger.progress("Building prompt...")
+            val prompt: LlmClient.Prompt = buildPrompt(code)
 
-        val client = LlmClient(config)
-        when {
-            dryRun -> client.renderDryRun(prompt, progressLogger)
-            stream -> client.renderStreamChat(prompt, progressLogger)
-            else -> client.renderChat(prompt, progressLogger)
+            val client = LlmClient(config)
+            when {
+                dryRun -> client.renderDryRun(prompt, progressLogger)
+                stream -> client.renderStreamChat(prompt, progressLogger)
+                else -> client.renderChat(prompt, progressLogger)
+            }
         }
-
-        progressLogger.logCompletion()
     }
 
     private fun CodeProvider.collectCode(): String = when (scope) {
@@ -246,40 +245,31 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
 
     private fun LlmClient.renderDryRun(prompt: LlmClient.Prompt, progressLogger: ProgressLogger) {
         val result = renderDryRun(prompt, stream)
-        progressLogger.log("Printing result...")
+        progressLogger.progress("Printing result...")
         println(result)
     }
 
     private fun LlmClient.renderStreamChat(prompt: LlmClient.Prompt, progressLogger: ProgressLogger) {
-        progressLogger.log("Sending streaming request to LLM...")
+        progressLogger.progress("Sending streaming request to LLM...")
         var printingStarted = false
-        var waitLogger: AutoCloseable = progressLogger.startWaitLogging(intervalSec = 10)
-        try {
-            chatStream(
-                prompt,
-                onDelta = { delta ->
-                    if (!printingStarted) {
-                        waitLogger.close()
-                        printingStarted = true
-                        progressLogger.log("Printing result...")
-                        waitLogger = progressLogger.startWaitLogging(intervalSec = 10)
-                    }
-                    print(delta)
-                    System.out.flush() // explicit flushing
-                },
-            )
-        } finally {
-            waitLogger.close()
-        }
+        chatStream(
+            prompt,
+            onDelta = { delta ->
+                if (!printingStarted) {
+                    printingStarted = true
+                    progressLogger.progress("Printing result...")
+                }
+                print(delta)
+                System.out.flush() // explicit flushing
+            },
+        )
         println() // trailing newline after streamed output
     }
 
     private fun LlmClient.renderChat(prompt: LlmClient.Prompt, progressLogger: ProgressLogger) {
-        progressLogger.log("Sending request to LLM...")
-        val result = progressLogger.startWaitLogging(intervalSec = 10).use {
-            chat(prompt)
-        }
-        progressLogger.log("Printing result...")
+        progressLogger.progress("Sending request to LLM...")
+        val result = chat(prompt)
+        progressLogger.progress("Printing result...")
         println(result)
     }
 }

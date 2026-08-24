@@ -667,7 +667,7 @@ class AidCommandTest {
                 .shouldContain("Building prompt...")
                 .shouldContain("Sending request to LLM...")
                 .shouldContain("Printing result...")
-                .shouldContain("Completed in ")
+                .shouldContain("Execution time: ")
             // Each line must start with a timestamp
             stderr.lines()
                 .filter { it.isNotBlank() }
