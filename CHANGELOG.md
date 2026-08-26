@@ -53,3 +53,7 @@ All notable changes to this project will be documented in this file.
 ## [1.9.1] - 2026-08-24
 ### Changed
 - Renamed the final summary line from "Completed in Ns" to "Execution time: Ns"; now it is emitted even when execution fails.
+
+## [1.10.0] - 2026-08-26
+### Added
+- Added `aid` / `aid.bat` wrapper scripts at the project root to simplify invocation (run `./aid` instead of `build/install/aid/bin/aid`).

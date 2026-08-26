@@ -1,0 +1,14 @@
+#!/bin/sh
+# convenience wrapper; delegates to the Gradle-installed binary.
+# Usage: ./aid [options]   (after running ./gradlew instDist)
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+BIN="$SCRIPT_DIR/build/install/aid/bin/aid"
+
+if [ ! -x "$BIN" ]; then
+    echo "aid: $BIN is missing or not executable" >&2
+    echo "Run './gradlew instDist' first." >&2
+    exit 1
+fi
+
+exec "$BIN" "$@"

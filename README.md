@@ -27,7 +27,7 @@ A lightweight CLI code assistant that leverages local Ollama instances (or any O
 
 ### Show usage
 ```sh
-build/install/aid/bin/aid
+./aid
 ```
 
 ### Set key (Windows)
@@ -42,27 +42,27 @@ export AID_API_KEY=<key>
 
 ### Analyze entire tracked codebase
 ```sh
-build/install/aid/bin/aid -d=<repo_path> -m=<model_name> -s=all -u=<api_url> > <output_path>
+./aid -d=<repo_path> -m=<model_name> -s=all -u=<api_url> > <output_path>
 ```
 
 ### Review uncommitted changes vs HEAD
 ```sh
-build/install/aid/bin/aid -d=<repo_path> -m=<model_name> -s=diff -u=<api_url> > <output_path>
+./aid -d=<repo_path> -m=<model_name> -s=diff -u=<api_url> > <output_path>
 ```
 
 ### Review N last commits
 ```sh
-build/install/aid/bin/aid -d=<repo_path> -m=<model_name> -s=diff -C=HEAD~<N> -u=<api_url> > <output_path>
+./aid -d=<repo_path> -m=<model_name> -s=diff -C=HEAD~<N> -u=<api_url> > <output_path>
 ```
 
 ### Custom prompt about entire tracked codebase
 ```sh
-build/install/aid/bin/aid -d=<repo_path> -m=<model_name> -s=all -u=<api_url> -p=<prompt_path> > <output_path>
+./aid -d=<repo_path> -m=<model_name> -s=all -u=<api_url> -p=<prompt_path> > <output_path>
 ```
 
 ### Stream partial results with progress tracking
 ```sh
-build/install/aid/bin/aid -d=<repo_path> -m=<model_name> -s=all -u=<api_url> --stream --progress > <output_path>
+./aid -d=<repo_path> -m=<model_name> -s=all -u=<api_url> --stream --progress > <output_path>
 ```
 
 ## Configuration & Prompts
