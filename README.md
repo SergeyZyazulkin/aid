@@ -65,6 +65,30 @@ export AID_API_KEY=<key>
 ./aid -d=<repo_path> -m=<model_name> -s=all -u=<api_url> --stream --progress > <output_path>
 ```
 
+### Arguments from files
+Store frequently-used option sets in a plain-text file and reference them with the `@` prefix.
+Use `@@` to escape the `@` prefix if needed.
+BOM in the beginning of a file is ignored.
+Each non-blank, non-`#` line is split on whitespace into individual arguments:
+
+```text
+# review.args
+-d /home/user/project
+-m llama3
+-s all
+--stream
+--progress
+```
+
+Then invoke:
+
+```sh
+./aid @review.args -u http://my-llm:11434 > output.md
+```
+
+Multiple `@file` tokens may be mixed with inline options in any order.
+`@` tokens inside an arg file are **not** recursively expanded; they are passed through as literal arguments.
+
 ## Configuration & Prompts
 
 The tool ships with two built-in system prompts in `src/main/resources/prompts/`:

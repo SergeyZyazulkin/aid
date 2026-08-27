@@ -57,3 +57,7 @@ All notable changes to this project will be documented in this file.
 ## [1.10.0] - 2026-08-26
 ### Added
 - Added `aid` / `aid.bat` wrapper scripts at the project root to simplify invocation (run `./aid` instead of `build/install/aid/bin/aid`).
+
+## [1.11.0] - 2026-08-27
+### Added
+- Added `@file` argument expansion: any CLI argument starting with `@` is treated as a path to a file whose lines (whitespace-split, `#`-comments and blank lines ignored) are spliced into the argument list. Enables storing option sets in files, e.g. `./aid @review.args -u http://my-llm:11434`.
