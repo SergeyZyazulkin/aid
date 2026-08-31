@@ -198,10 +198,30 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
     var stream = false
         private set
 
+    @CommandLine.Option(
+        names = ["--usage"],
+        required = false,
+        defaultValue = "false",
+        description = [
+            "Print token usage data from the LLM response to stderr",
+        ],
+    )
+    var usage: Boolean = false
+        private set
+
     override fun run() {
         ProgressLogger(enabled = progress).use { progressLogger ->
             val resolvedApiKey = apiKey ?: environment["AID_API_KEY"]
-            val config = LlmClient.Config(url, model, connectTimeoutSec, readTimeoutSec, forceThinking, resolvedApiKey)
+
+            val config = LlmClient.Config(
+                url = url,
+                model = model,
+                connectTimeoutSec = connectTimeoutSec,
+                readTimeoutSec = readTimeoutSec,
+                forceThinking = forceThinking,
+                apiKey = resolvedApiKey,
+                requestStreamUsage = usage
+            )
 
             progressLogger.progress("Collecting code...")
             val code: String = CodeProvider(projectDir, codeLimit).collectCode()
@@ -252,7 +272,7 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
     private fun LlmClient.renderStreamChat(prompt: LlmClient.Prompt, progressLogger: ProgressLogger) {
         progressLogger.progress("Sending streaming request to LLM...")
         var printingStarted = false
-        chatStream(
+        val chatUsage: Usage? = chatStream(
             prompt,
             onDelta = { delta ->
                 if (!printingStarted) {
@@ -261,8 +281,9 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
                 }
                 print(delta)
                 System.out.flush() // explicit flushing
-            },
+            }
         )
+        if (usage) printUsage(chatUsage)
         println() // trailing newline after streamed output
     }
 
@@ -270,6 +291,33 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
         progressLogger.progress("Sending request to LLM...")
         val result = chat(prompt)
         progressLogger.progress("Printing result...")
-        println(result)
+        println(result.content)
+        if (usage) printUsage(result.usage)
+    }
+
+    private fun printUsage(usage: Usage?) {
+        val usageText = buildString {
+            usage?.let { usage ->
+                usage.promptTokens?.let { promptTokens ->
+                    append("prompt=$promptTokens")
+                    usage.promptTokensDetails?.cachedTokens?.let { cachedTokens ->
+                        append(" (cached=$cachedTokens)")
+                    }
+                }
+                usage.completionTokens?.let { completionTokens ->
+                    if (isNotEmpty()) append(", ")
+                    append("completion=$completionTokens")
+                    usage.completionTokensDetails?.reasoningTokens?.let { reasoningTokens ->
+                        append(" (reasoning=$reasoningTokens)")
+                    }
+                }
+                usage.totalTokens?.let { totalTokens ->
+                    if (isNotEmpty()) append(", ")
+                    append("total=$totalTokens")
+                }
+            }
+        }.ifBlank { "no usage data in response" }
+
+        System.err.println("[USAGE] $usageText")
     }
 }

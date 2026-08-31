@@ -1,5 +1,7 @@
 package dev.sz.aid
 
+import io.kotest.matchers.nulls.shouldBeNull
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.mockk.every
@@ -73,7 +75,9 @@ class LlmClientTest {
             userMessage = null,
             code = "abc"
         )
-        client.chat(prompt) shouldBe responseMessage
+        val result = client.chat(prompt)
+        result.content shouldBe responseMessage
+        result.usage shouldBe null
     }
 
     @Test
@@ -119,9 +123,9 @@ class LlmClientTest {
         )
 
         val sseBody = buildString {
-            appendLine("data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hel\"},\"finish_reason\":null}]}")
+            appendLine("""data: {"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","content":"Hel"},"finish_reason":null}]}""")
             appendLine()
-            appendLine("data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"lo\"},\"finish_reason\":null}]}")
+            appendLine("""data: {"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"lo"},"finish_reason":null}]}""")
             appendLine()
             appendLine("data: [DONE]")
             appendLine()
@@ -135,9 +139,11 @@ class LlmClientTest {
                 .request(Request.Builder().url(config.url).build())
                 .protocol(Protocol.HTTP_1_1)
                 .code(200)
-                .headers(Headers.Builder()
-                    .add("Content-Type", "text/event-stream")
-                    .build())
+                .headers(
+                    Headers.Builder()
+                        .add("Content-Type", "text/event-stream")
+                        .build()
+                )
                 .message("OK")
                 .body(sseBody.toResponseBody("text/event-stream".toMediaType()))
                 .build()
@@ -208,9 +214,11 @@ class LlmClientTest {
                 .protocol(Protocol.HTTP_1_1)
                 .code(200)
                 .message("OK")
-                .headers(Headers.Builder()
-                    .add("Content-Type", "text/event-stream")
-                    .build())
+                .headers(
+                    Headers.Builder()
+                        .add("Content-Type", "text/event-stream")
+                        .build()
+                )
                 .body(sseBody.toResponseBody("text/event-stream".toMediaType()))
                 .build()
         }
@@ -242,9 +250,11 @@ class LlmClientTest {
                 .protocol(Protocol.HTTP_1_1)
                 .code(200)
                 .message("OK")
-                .headers(Headers.Builder()
-                    .add("Content-Type", "text/plain")
-                    .build())
+                .headers(
+                    Headers.Builder()
+                        .add("Content-Type", "text/plain")
+                        .build()
+                )
                 .body("body".toResponseBody("text/plain".toMediaType()))
                 .build()
         }
@@ -268,9 +278,9 @@ class LlmClientTest {
         )
 
         val sseBody = buildString {
-            appendLine("data: {\"id\":\"1\",\"choices\":[]}")
+            appendLine("""data: {"id":"1","choices":[]}""")
             appendLine()
-            appendLine("data: {\"id\":\"1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":null}}]}")
+            appendLine("""data: {"id":"1","choices":[{"index":0,"delta":{"content":null}}]}""")
             appendLine()
             appendLine("data: [DONE]")
             appendLine()
@@ -285,9 +295,11 @@ class LlmClientTest {
                 .protocol(Protocol.HTTP_1_1)
                 .code(200)
                 .message("OK")
-                .headers(Headers.Builder()
-                    .add("Content-Type", "text/event-stream")
-                    .build())
+                .headers(
+                    Headers.Builder()
+                        .add("Content-Type", "text/event-stream")
+                        .build()
+                )
                 .body(sseBody.toResponseBody("text/event-stream".toMediaType()))
                 .build()
         }
@@ -299,5 +311,103 @@ class LlmClientTest {
             onDelta = { deltas.add(it) },
         )
         deltas shouldBe emptyList()
+    }
+
+    @Test
+    fun `chat returns usage data`() {
+        val config = LlmClient.Config(
+            url = "http://localhost:1234",
+            model = "dummy",
+            connectTimeoutSec = 5,
+            readTimeoutSec = 60,
+            requestStreamUsage = true,
+        )
+        val mockResponseBody = """
+        {
+          "choices": [{"index": 0, "message": {"role": "assistant", "content": "hello"}}],
+          "usage": {
+            "prompt_tokens": 42, 
+            "completion_tokens": 7, 
+            "total_tokens": 49,
+            "prompt_tokens_details": {
+              "cached_tokens": 0
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 22
+            }
+          }
+        }
+        """.trimIndent()
+
+        val mockCall = mockk<Call>()
+        mockkConstructor(OkHttpClient::class)
+        every { anyConstructed<OkHttpClient>().newCall(any()) } returns mockCall
+        every { mockCall.execute() } answers {
+            Response.Builder()
+                .request(Request.Builder().url(config.url).build())
+                .protocol(Protocol.HTTP_1_1)
+                .code(200)
+                .message("OK")
+                .body(mockResponseBody.toResponseBody("application/json".toMediaType()))
+                .build()
+        }
+
+        val client = LlmClient(config)
+        val result = client.chat(LlmClient.Prompt("sys", null, "code"))
+        result.content shouldBe "hello"
+        result.usage?.promptTokens shouldBe 42
+        result.usage?.completionTokens shouldBe 7
+        result.usage?.totalTokens shouldBe 49
+        result.usage?.promptTokensDetails?.cachedTokens shouldBe 0
+        result.usage?.completionTokensDetails?.reasoningTokens shouldBe 22
+    }
+
+    @Test
+    fun `chatStream returns usage data`() {
+        val config = LlmClient.Config(
+            url = "http://localhost:1234",
+            model = "dummy",
+            connectTimeoutSec = 5,
+            readTimeoutSec = 60,
+        )
+
+        val sseBody = buildString {
+            appendLine("""data: {"id":"1","choices":[]}""")
+            appendLine()
+            appendLine("""data: {"id":"1","choices":[{"index":0,"delta":{"content":null}}],"usage":{"prompt_tokens":122,"completion_tokens":17,"total_tokens":139}}""")
+            appendLine()
+            appendLine("data: [DONE]")
+            appendLine()
+        }
+
+        val mockCall = mockk<Call>()
+        mockkConstructor(OkHttpClient::class)
+        every { anyConstructed<OkHttpClient>().newCall(any()) } returns mockCall
+        every { mockCall.execute() } answers {
+            Response.Builder()
+                .request(Request.Builder().url(config.url).build())
+                .protocol(Protocol.HTTP_1_1)
+                .code(200)
+                .message("OK")
+                .headers(
+                    Headers.Builder()
+                        .add("Content-Type", "text/event-stream")
+                        .build()
+                )
+                .body(sseBody.toResponseBody("text/event-stream".toMediaType()))
+                .build()
+        }
+
+        val client = LlmClient(config)
+        val usage: Usage? = client.chatStream(
+            prompt = LlmClient.Prompt("sys", null, "code"),
+            onDelta = {},
+        )
+        usage.shouldNotBeNull()
+        usage.promptTokens shouldBe 122
+        usage.completionTokens shouldBe 17
+        usage.totalTokens shouldBe 139
+        usage.promptTokensDetails.shouldBeNull()
+        usage.completionTokensDetails.shouldBeNull()
     }
 }

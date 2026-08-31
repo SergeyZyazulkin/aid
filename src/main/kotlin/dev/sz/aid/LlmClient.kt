@@ -1,7 +1,5 @@
 package dev.sz.aid
 
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -36,7 +34,7 @@ class LlmClient(val config: Config) {
         }
     }
 
-    fun chat(prompt: Prompt): String {
+    fun chat(prompt: Prompt): ChatResult {
         val request: Request = buildChatRequest(prompt, stream = false)
 
         val responseBody = httpClient.newCall(request).execute().use { response ->
@@ -49,12 +47,15 @@ class LlmClient(val config: Config) {
 
         val response: ChatCompletionResponse = json.decodeFromString(responseBody)
 
-        return response.choices.firstOrNull()?.message?.content
+        val responseContent: String = response.choices.firstOrNull()?.message?.content
             ?: throw IOException("No LLM response message: $responseBody")
+
+        return ChatResult(responseContent, response.usage)
     }
 
-    fun chatStream(prompt: Prompt, onDelta: (String) -> Unit) {
+    fun chatStream(prompt: Prompt, onDelta: (String) -> Unit): Usage? {
         val request: Request = buildChatRequest(prompt, stream = true)
+        var usage: Usage? = null
 
         httpClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
@@ -75,11 +76,15 @@ class LlmClient(val config: Config) {
                     } catch (e: SerializationException) {
                         throw IllegalStateException("Invalid LLM data: $data", e)
                     }
-                    val content = chunk.choices.firstOrNull()?.delta?.content
+
+                    val content: String? = chunk.choices.firstOrNull()?.delta?.content
                     if (!content.isNullOrEmpty()) onDelta(content)
+                    chunk.usage?.let { usage = it }
                 }
             }
         }
+
+        return usage
     }
 
     // single-line data only; sufficient for OpenAI-compatible SSE
@@ -119,6 +124,7 @@ class LlmClient(val config: Config) {
         val readTimeoutSec: Long,
         val forceThinking: Boolean = false,
         val apiKey: String? = null,
+        val requestStreamUsage: Boolean = false,
     ) {
         init {
             try {
@@ -157,89 +163,18 @@ class LlmClient(val config: Config) {
                 thinkingBudget = 512,
                 preserveThinking = true,
             )
-        } else {
-            null
-        }
+        } else null
+
+        val streamOptions: ChatCompletionRequest.StreamOptions? = if (stream && config.requestStreamUsage) {
+            ChatCompletionRequest.StreamOptions(includeUsage = true)
+        } else null
 
         return ChatCompletionRequest(
             model = config.model,
             messages = chatMessages,
             stream = stream,
             extraBody = thinkingConfig,
+            streamOptions = streamOptions,
         )
     }
-}
-
-@Serializable
-private data class ChatMessage(
-    val role: String,
-    val content: String
-)
-
-@Serializable
-private data class ChatCompletionRequest(
-    val model: String,
-    val messages: List<ChatMessage>,
-    val temperature: Double? = null,
-    @SerialName("max_tokens")
-    val maxTokens: Int? = null,
-    val stream: Boolean = false,
-    @SerialName("extra_body")
-    val extraBody: ExtraBody? = null
-) {
-    @Serializable
-    data class ExtraBody(
-        @SerialName("enable_thinking")
-        val enableThinking: Boolean = true,
-        @SerialName("thinking_budget")
-        val thinkingBudget: Int = 512,
-        @SerialName("preserve_thinking")
-        val preserveThinking: Boolean = true
-    )
-}
-
-@Serializable
-private data class ChatCompletionResponse(
-    val id: String? = null,
-    val choices: List<Choice> = emptyList(),
-    val usage: Usage? = null
-) {
-    @Serializable
-    data class Choice(
-        val index: Int,
-        val message: ChatMessage? = null,
-        @SerialName("finish_reason")
-        val finishReason: String? = null
-    )
-
-    @Serializable
-    data class Usage(
-        @SerialName("prompt_tokens")
-        val promptTokens: Int? = null,
-        @SerialName("completion_tokens")
-        val completionTokens: Int? = null,
-        @SerialName("total_tokens")
-        val totalTokens: Int? = null
-    )
-}
-
-@Serializable
-private data class ChatCompletionStreamResponse(
-    val id: String? = null,
-    val obj: String? = null,
-    val choices: List<StreamChoice> = emptyList(),
-) {
-    @Serializable
-    data class StreamChoice(
-        val index: Int,
-        val delta: StreamDelta? = null,
-        @SerialName("finish_reason")
-        val finishReason: String? = null
-    )
-
-    @Serializable
-    data class StreamDelta(
-        val role: String? = null,
-        val content: String? = null
-    )
 }

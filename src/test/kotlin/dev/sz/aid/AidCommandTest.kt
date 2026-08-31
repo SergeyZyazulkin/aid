@@ -48,6 +48,7 @@ class AidCommandTest {
         cmd.debugCodeContent shouldBe false
         cmd.lang shouldBe OutputLanguage.EN
         cmd.stream shouldBe false
+        cmd.usage shouldBe false
     }
 
     @Test
@@ -111,6 +112,17 @@ class AidCommandTest {
             "--stream",
         )
         cmd.stream shouldBe true
+    }
+
+    @Test
+    fun `parses usage flag correctly`() {
+        val cmd = CommandLine.populateCommand(
+            AidCommand(),
+            "-d", "/test/repo",
+            "-m", "llama3",
+            "--usage",
+        )
+        cmd.usage shouldBe true
     }
 
     @Test
@@ -222,7 +234,7 @@ class AidCommandTest {
             llmServer.enqueue(
                 MockResponse.Builder()
                     .code(200)
-                    .body("{\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"review\"}}]}")
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"review"}}]}""")
                     .build()
             )
 
@@ -261,7 +273,7 @@ class AidCommandTest {
             llmServer.enqueue(
                 MockResponse.Builder()
                     .code(200)
-                    .body("{\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"custom\"}}]}")
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"custom"}}]}""")
                     .build()
             )
 
@@ -299,7 +311,7 @@ class AidCommandTest {
             llmServer.enqueue(
                 MockResponse.Builder()
                     .code(200)
-                    .body("{\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"msg\"}}]}")
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"msg"}}]}""")
                     .build()
             )
 
@@ -334,7 +346,7 @@ class AidCommandTest {
             llmServer.enqueue(
                 MockResponse.Builder()
                     .code(200)
-                    .body("{\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"msg\"}}]}")
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"msg"}}]}""")
                     .build()
             )
 
@@ -366,7 +378,7 @@ class AidCommandTest {
             llmServer.enqueue(
                 MockResponse.Builder()
                     .code(200)
-                    .body("{\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"msg\"}}]}")
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"msg"}}]}""")
                     .build()
             )
 
@@ -401,7 +413,7 @@ class AidCommandTest {
             llmServer.enqueue(
                 MockResponse.Builder()
                     .code(200)
-                    .body("{\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"msg\"}}]}")
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"msg"}}]}""")
                     .build()
             )
 
@@ -447,7 +459,7 @@ class AidCommandTest {
             llmServer.enqueue(
                 MockResponse.Builder()
                     .code(200)
-                    .body("{\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"msg\"}}]}")
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"msg"}}]}""")
                     .build()
             )
 
@@ -528,7 +540,7 @@ class AidCommandTest {
             llmServer.enqueue(
                 MockResponse.Builder()
                     .code(200)
-                    .body("{\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"отлично\"}}]}")
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"отлично"}}]}""")
                     .build()
             )
 
@@ -564,7 +576,7 @@ class AidCommandTest {
             llmServer.enqueue(
                 MockResponse.Builder()
                     .code(200)
-                    .body("{\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"ok\"}}]}")
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}""")
                     .build()
             )
 
@@ -818,11 +830,11 @@ class AidCommandTest {
         gitDir.runProcess("git", "commit", "-m", "init")
 
         val sseBody = buildString {
-            appendLine("data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hello\"},\"finish_reason\":null}]}")
+            appendLine("""data: {"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","content":"Hello"},"finish_reason":null}]}""")
             appendLine()
-            appendLine("data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" world\"},\"finish_reason\":null}]}")
+            appendLine("""data: {"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":" world"},"finish_reason":null}]}""")
             appendLine()
-            appendLine("data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"!\"},\"finish_reason\":\"stop\"}]}")
+            appendLine("""data: {"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"!"},"finish_reason":"stop"}]}""")
             appendLine()
             appendLine("data: [DONE]")
             appendLine()
@@ -833,9 +845,11 @@ class AidCommandTest {
             llmServer.enqueue(
                 MockResponse.Builder()
                     .code(200)
-                    .headers(Headers.Builder()
-                        .add("Content-Type", "text/event-stream")
-                        .build())
+                    .headers(
+                        Headers.Builder()
+                            .add("Content-Type", "text/event-stream")
+                            .build()
+                    )
                     .body(sseBody)
                     .build()
             )
@@ -864,6 +878,310 @@ class AidCommandTest {
                 body shouldNotBeNull {
                     string(Charsets.UTF_8)
                         .shouldContain("\"stream\":true")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `--usage prints token usage to stderr in non-streaming mode`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder().code(200)
+                    .body(
+                        """{"choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}],
+                        "usage":{"prompt_tokens":100,"completion_tokens":50,"total_tokens":150}}"""
+                    )
+                    .build()
+            )
+
+            val originalOut = System.out
+            val outBuf = ByteArrayOutputStream()
+            val originalErr = System.err
+            val errBuf = ByteArrayOutputStream()
+            try {
+                System.setOut(PrintStream(outBuf, true, Charsets.UTF_8))
+                System.setErr(PrintStream(errBuf, true, Charsets.UTF_8))
+
+                CommandLine(AidCommand()).execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                    "--usage",
+                )
+            } finally {
+                System.setOut(originalOut)
+                System.setErr(originalErr)
+            }
+
+            String(errBuf.toByteArray(), Charsets.UTF_8)
+                .shouldContain("[USAGE] prompt=100, completion=50, total=150")
+
+            // stdout should still contain only the LLM result
+            String(outBuf.toByteArray(), Charsets.UTF_8)
+                .shouldMatch(Regex("ok\\s*"))
+        }
+    }
+
+    @Test
+    fun `--usage not set means no usage line on stderr`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder().code(200)
+                    .body(
+                        """{"choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}],
+                        "usage":{"prompt_tokens":100,"completion_tokens":50,"total_tokens":150}}"""
+                    )
+                    .build()
+            )
+
+            val originalErr = System.err
+            val errBuf = ByteArrayOutputStream()
+            try {
+                System.setErr(PrintStream(errBuf, true, Charsets.UTF_8))
+
+                CommandLine(AidCommand()).execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                )
+            } finally {
+                System.setErr(originalErr)
+            }
+
+            String(errBuf.toByteArray(), Charsets.UTF_8)
+                .shouldNotContain("[USAGE]")
+        }
+    }
+
+    @Test
+    fun `--usage prints token usage to stderr in streaming mode`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        val sseBody = buildString {
+            appendLine("""data: {"id":"1","choices":[{"index":0,"delta":{"role":"assistant","content":"Hi"},"finish_reason":null}]}""")
+            appendLine()
+            appendLine("""data: {"id":"1","choices":[{"index":0,"delta":{"content":" there"},"finish_reason":"stop"}],"usage":{"prompt_tokens":200,"completion_tokens":10,"total_tokens":210,"prompt_tokens_details":{"cached_tokens": 10},"completion_tokens_details":{"reasoning_tokens":5}}}""")
+            appendLine()
+            appendLine("data: [DONE]")
+            appendLine()
+        }
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder()
+                    .code(200)
+                    .headers(Headers.Builder().add("Content-Type", "text/event-stream").build())
+                    .body(sseBody)
+                    .build()
+            )
+
+            val originalOut = System.out
+            val outBuf = ByteArrayOutputStream()
+            val originalErr = System.err
+            val errBuf = ByteArrayOutputStream()
+            try {
+                System.setOut(PrintStream(outBuf, true, Charsets.UTF_8))
+                System.setErr(PrintStream(errBuf, true, Charsets.UTF_8))
+
+                CommandLine(AidCommand()).execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                    "--stream",
+                    "--usage",
+                )
+            } finally {
+                System.setOut(originalOut)
+                System.setErr(originalErr)
+            }
+
+            String(outBuf.toByteArray(), Charsets.UTF_8)
+                .shouldContain("Hi there")
+
+            String(errBuf.toByteArray(), Charsets.UTF_8)
+                .shouldContain("[USAGE] prompt=200 (cached=10), completion=10 (reasoning=5), total=210")
+        }
+    }
+
+    @Test
+    fun `--usage prints token usage to stderr in streaming mode when no usage is received`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        val sseBody = buildString {
+            appendLine("""data: {"id":"1","choices":[{"index":0,"delta":{"role":"assistant","content":"Hi"},"finish_reason":null}]}""")
+            appendLine()
+            appendLine("""data: {"id":"1","choices":[{"index":0,"delta":{"content":" there"},"finish_reason":"stop"}]}""")
+            appendLine()
+            appendLine("data: [DONE]")
+            appendLine()
+        }
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder()
+                    .code(200)
+                    .headers(Headers.Builder().add("Content-Type", "text/event-stream").build())
+                    .body(sseBody)
+                    .build()
+            )
+
+            val originalOut = System.out
+            val outBuf = ByteArrayOutputStream()
+            val originalErr = System.err
+            val errBuf = ByteArrayOutputStream()
+            try {
+                System.setOut(PrintStream(outBuf, true, Charsets.UTF_8))
+                System.setErr(PrintStream(errBuf, true, Charsets.UTF_8))
+
+                CommandLine(AidCommand()).execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                    "--stream",
+                    "--usage",
+                )
+            } finally {
+                System.setOut(originalOut)
+                System.setErr(originalErr)
+            }
+
+            String(outBuf.toByteArray(), Charsets.UTF_8)
+                .shouldContain("Hi there")
+
+            String(errBuf.toByteArray(), Charsets.UTF_8)
+                .shouldContain("[USAGE] no usage data in response")
+        }
+    }
+
+    @Test
+    fun `includes stream_options when streaming and usage requested`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        val sseBody = buildString {
+            appendLine("""data: {"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","content":"Hello"},"finish_reason":null}]}""")
+            appendLine()
+            appendLine("""data: {"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":" world"},"finish_reason":null}]}""")
+            appendLine()
+            appendLine("""data: {"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"!"},"finish_reason":"stop"}]},"usage":{"prompt_tokens":200,"completion_tokens":10,"total_tokens":210}}""")
+            appendLine()
+            appendLine("data: [DONE]")
+            appendLine()
+        }
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder()
+                    .code(200)
+                    .headers(
+                        Headers.Builder()
+                            .add("Content-Type", "text/event-stream")
+                            .build()
+                    )
+                    .body(sseBody)
+                    .build()
+            )
+
+            CommandLine(AidCommand())
+                .execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                    "--stream",
+                    "--usage",
+                )
+
+            llmServer.takeRequest(0, TimeUnit.SECONDS) shouldNotBeNull {
+                body shouldNotBeNull {
+                    string(Charsets.UTF_8)
+                        .shouldContain("\"stream_options\"")
+                        .shouldContain("\"include_usage\"")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `doesn't include stream_options when usage isn't requested`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        val sseBody = buildString {
+            appendLine("""data: {"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","content":"Hello"},"finish_reason":null}]}""")
+            appendLine()
+            appendLine("""data: {"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":" world"},"finish_reason":null}]}""")
+            appendLine()
+            appendLine("""data: {"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"!"},"finish_reason":"stop"}]}""")
+            appendLine()
+            appendLine("data: [DONE]")
+            appendLine()
+        }
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder()
+                    .code(200)
+                    .headers(
+                        Headers.Builder()
+                            .add("Content-Type", "text/event-stream")
+                            .build()
+                    )
+                    .body(sseBody)
+                    .build()
+            )
+
+            CommandLine(AidCommand())
+                .execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                    "--stream",
+                )
+
+            llmServer.takeRequest(0, TimeUnit.SECONDS) shouldNotBeNull {
+                body shouldNotBeNull {
+                    string(Charsets.UTF_8)
+                        .shouldNotContain("\"stream_options\"")
+                        .shouldNotContain("\"include_usage\"")
                 }
             }
         }
