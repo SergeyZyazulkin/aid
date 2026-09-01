@@ -12,8 +12,16 @@ class Git(val dir: Path) {
         require(Files.isRegularFile(gitConfig)) { "Missing git config in $dir" }
     }
 
-    fun diff(commit: String, pathspecs: List<String> = emptyList()): String {
-        val command = listOf("git", "diff", commit).withPathspecs(pathspecs)
+    fun diff(commit: String, pathspecs: List<String> = emptyList(), contextLines: Int? = null): String {
+        require(contextLines == null || contextLines >= 0) { "Context lines must be non-negative: $contextLines" }
+
+        val command = buildList {
+            add("git")
+            add("diff")
+            contextLines?.let { add("-U$it") }
+            add(commit)
+        }.withPathspecs(pathspecs)
+
         return dir.runProcess(*command)
     }
 

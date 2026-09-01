@@ -98,4 +98,38 @@ class GitTest {
         Git(tempGitDir).listTextFiles(listOf("src/"))
         verify { tempGitDir.runProcess("git", "grep", "-Il", ".", "--", "src/") }
     }
+
+    @Test
+    fun `diff with custom context lines passes -U flag`() {
+        val tempGitDir = createTempDirectory("aid-test-git-")
+        tempGitDir.runProcess("git", "init")
+
+        mockkStatic(Path::runProcess)
+        every { tempGitDir.runProcess(*anyVararg()) } returns ""
+
+        Git(tempGitDir).diff("HEAD", emptyList(), contextLines = 10)
+        verify { tempGitDir.runProcess("git", "diff", "-U10", "HEAD") }
+    }
+
+    @Test
+    fun `diff with zero context lines passes -U0`() {
+        val tempGitDir = createTempDirectory("aid-test-git-")
+        tempGitDir.runProcess("git", "init")
+
+        mockkStatic(Path::runProcess)
+        every { tempGitDir.runProcess(*anyVararg()) } returns ""
+
+        Git(tempGitDir).diff("HEAD", emptyList(), contextLines = 0)
+        verify { tempGitDir.runProcess("git", "diff", "-U0", "HEAD") }
+    }
+
+    @Test
+    fun `diff rejects negative context lines`() {
+        val tempGitDir = createTempDirectory("aid-test-git-")
+        tempGitDir.runProcess("git", "init")
+
+        assertThrows<IllegalArgumentException> {
+            Git(tempGitDir).diff("HEAD", emptyList(), contextLines = -1)
+        }.message.shouldContain("Context lines must be non-negative: -1")
+    }
 }

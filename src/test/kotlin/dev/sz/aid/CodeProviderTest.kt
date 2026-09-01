@@ -32,10 +32,10 @@ class CodeProviderTest {
         val expectedDiff = "some random diff"
 
         mockkConstructor(Git::class)
-        every { anyConstructed<Git>().diff(any(), any()) } returns expectedDiff
+        every { anyConstructed<Git>().diff(any(), any(), any()) } returns expectedDiff
 
         CodeProvider(gitDir, codeLimit = 1_000_000)
-            .collectDiff("HEAD~1", emptyList()) shouldBe expectedDiff
+            .collectDiff("HEAD~1", emptyList(), null) shouldBe expectedDiff
     }
 
     @Test
@@ -212,12 +212,12 @@ class CodeProviderTest {
     fun `collectDiff delegates pathspecs to git`() {
         val expectedDiff = "diff with filters"
         mockkConstructor(Git::class)
-        every { anyConstructed<Git>().diff(any(), any()) } returns expectedDiff
+        every { anyConstructed<Git>().diff(any(), any(), any()) } returns expectedDiff
 
         CodeProvider(gitDir, codeLimit = 1_000_000)
             .collectDiff("HEAD~1", listOf("src/", ":(exclude)*.min.js")) shouldBe expectedDiff
 
-        verify { anyConstructed<Git>().diff("HEAD~1", listOf("src/", ":(exclude)*.min.js")) }
+        verify { anyConstructed<Git>().diff("HEAD~1", listOf("src/", ":(exclude)*.min.js"), null) }
     }
 
     @Test
@@ -232,5 +232,18 @@ class CodeProviderTest {
         CodeProvider(gitDir, codeLimit = 10_000)
             .collectFiles(listOf(":(exclude)build/"), emptyList())
             .shouldContain("src/main/kotlin/App.kt")
+    }
+
+    @Test
+    fun `collectDiff passes custom context lines to git`() {
+        val expectedDiff = "diff with 20 lines context"
+
+        mockkConstructor(Git::class)
+        every { anyConstructed<Git>().diff(any(), any(), any()) } returns expectedDiff
+
+        CodeProvider(gitDir, codeLimit = 1_000_000)
+            .collectDiff("HEAD~2", emptyList(), contextLines = 20) shouldBe expectedDiff
+
+        verify { anyConstructed<Git>().diff("HEAD~2", emptyList(), 20) }
     }
 }

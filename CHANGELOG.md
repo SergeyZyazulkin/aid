@@ -65,3 +65,7 @@ All notable changes to this project will be documented in this file.
 ## [1.12.0] - 2026-08-31
 ### Added
 - Added `--usage` flag to print token usage data from the LLM response to stderr. Works in both standard and `--stream` modes.
+
+## [1.13.0] - 2026-09-01
+### Added
+- Added `-U`/`--context-lines` option to control the number of context lines in diff output (passed as `-U<N>` to `git diff`).

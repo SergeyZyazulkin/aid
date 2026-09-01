@@ -203,10 +203,22 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
         required = false,
         defaultValue = "false",
         description = [
-            "Print token usage data from the LLM response to stderr",
+            "Print token usage data from the LLM response to",
+            "stderr",
         ],
     )
     var usage: Boolean = false
+        private set
+
+    @CommandLine.Option(
+        names = ["-U", "--context-lines"],
+        required = false,
+        description = [
+            "Number of context lines in diff output",
+            "(passed as -U<N> to git diff)",
+        ],
+    )
+    var contextLines: Int? = null
         private set
 
     override fun run() {
@@ -241,7 +253,7 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
     }
 
     private fun CodeProvider.collectCode(): String = when (scope) {
-        CodeScope.DIFF -> collectDiff(commit, sources)
+        CodeScope.DIFF -> collectDiff(commit, sources, contextLines)
         CodeScope.ALL -> collectAll(fileFilters)
         CodeScope.SOURCES -> {
             require(sources.isNotEmpty()) { "At least one --sources option must be specified" }

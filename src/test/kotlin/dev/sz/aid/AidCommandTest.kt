@@ -49,6 +49,7 @@ class AidCommandTest {
         cmd.lang shouldBe OutputLanguage.EN
         cmd.stream shouldBe false
         cmd.usage shouldBe false
+        cmd.contextLines shouldBe null
     }
 
     @Test
@@ -123,6 +124,28 @@ class AidCommandTest {
             "--usage",
         )
         cmd.usage shouldBe true
+    }
+
+    @Test
+    fun `parses context-lines option correctly`() {
+        val cmd = CommandLine.populateCommand(
+            AidCommand(),
+            "-d", "/test/repo",
+            "-m", "model",
+            "-U", "10",
+        )
+        cmd.contextLines shouldBe 10
+    }
+
+    @Test
+    fun `parses context-lines long form correctly`() {
+        val cmd = CommandLine.populateCommand(
+            AidCommand(),
+            "-d", "/test/repo",
+            "-m", "model",
+            "--context-lines", "0",
+        )
+        cmd.contextLines shouldBe 0
     }
 
     @Test

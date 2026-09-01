@@ -23,8 +23,8 @@ class CodeProvider(dir: Path, val codeLimit: Int) {
      * [pathspecs] are Git pathspecs defining files included in diff.
      * Full diff on empty [pathspecs].
      */
-    fun collectDiff(commit: String, pathspecs: List<String>): String {
-        return git.diff(commit, pathspecs)
+    fun collectDiff(commit: String, pathspecs: List<String>, contextLines: Int? = null): String {
+        return git.diff(commit, pathspecs, contextLines)
             .also { diff -> check(diff.length <= codeLimit) { "Diff (${diff.length}) exceeds $codeLimit characters" } }
     }
 

@@ -12,6 +12,7 @@ A lightweight CLI code assistant that leverages local Ollama instances (or any O
 - **Dry Run & Debugging**: Preview the exact LLM request JSON without sending it (`--dry-run`), or print collected code to stderr (`--debug-code-content`).
 - **Configurable output language**: Supports English and Russian.
 - **Token usage reporting**: Print LLM token usage to stderr with `--usage`.
+- **Configurable diff context**: Control surrounding lines in diff output with `--context-lines` (`-U`).
 
 ## Prerequisites
 
