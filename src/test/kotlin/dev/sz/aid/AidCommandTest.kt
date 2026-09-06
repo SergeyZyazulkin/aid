@@ -1,6 +1,7 @@
 package dev.sz.aid
 
 import io.kotest.matchers.collections.shouldContain
+import io.kotest.matchers.comparables.shouldBeLessThan
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -50,6 +51,7 @@ class AidCommandTest {
         cmd.stream shouldBe false
         cmd.usage shouldBe false
         cmd.contextLines shouldBe null
+        cmd.includeReasoning shouldBe false
     }
 
     @Test
@@ -146,6 +148,17 @@ class AidCommandTest {
             "--context-lines", "0",
         )
         cmd.contextLines shouldBe 0
+    }
+
+    @Test
+    fun `parses --reasoning flag correctly`() {
+        val cmd = CommandLine.populateCommand(
+            AidCommand(),
+            "-d", "/test/repo",
+            "-m", "llama3",
+            "--reasoning",
+        )
+        cmd.includeReasoning shouldBe true
     }
 
     @Test
@@ -1207,6 +1220,379 @@ class AidCommandTest {
                         .shouldNotContain("\"include_usage\"")
                 }
             }
+        }
+    }
+
+    @Test
+    fun `non-streaming with --reasoning includes blockquote in output`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder().code(200)
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"The answer is 42.","reasoning_content":"Let me think... 6*7=42."}}]}""")
+                    .build()
+            )
+
+            val originalOut = System.out
+            val captured = ByteArrayOutputStream()
+            try {
+                System.setOut(PrintStream(captured, true, Charsets.UTF_8))
+
+                CommandLine(AidCommand()).execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                    "--reasoning",
+                )
+            } finally {
+                System.setOut(originalOut)
+            }
+
+            val output = String(captured.toByteArray(), Charsets.UTF_8)
+            output.shouldContain("> **Reasoning**")
+                .shouldContain("> Let me think... 6*7=42.")
+                .shouldContain("The answer is 42.")
+            // Reasoning must appear before content
+            output.indexOf("Reasoning") shouldBeLessThan output.indexOf("The answer is 42.")
+        }
+    }
+
+    @Test
+    fun `non-streaming without --reasoning omits reasoning from output`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder().code(200)
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"The answer is 42.","reasoning_content":"Let me think..."}}]}""")
+                    .build()
+            )
+
+            val originalOut = System.out
+            val captured = ByteArrayOutputStream()
+            try {
+                System.setOut(PrintStream(captured, true, Charsets.UTF_8))
+
+                CommandLine(AidCommand()).execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                )
+            } finally {
+                System.setOut(originalOut)
+            }
+
+            String(captured.toByteArray(), Charsets.UTF_8)
+                .shouldNotContain("Reasoning")
+                .shouldNotContain("Let me think")
+                .shouldContain("The answer is 42.")
+        }
+    }
+
+    @Test
+    fun `non-streaming with --reasoning but no reasoning content in response`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder().code(200)
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"Just the answer."}}]}""")
+                    .build()
+            )
+
+            val originalOut = System.out
+            val captured = ByteArrayOutputStream()
+            try {
+                System.setOut(PrintStream(captured, true, Charsets.UTF_8))
+
+                CommandLine(AidCommand()).execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                    "--reasoning",
+                )
+            } finally {
+                System.setOut(originalOut)
+            }
+
+            String(captured.toByteArray(), Charsets.UTF_8)
+                .shouldNotContain("Reasoning")
+                .shouldContain("Just the answer.")
+        }
+    }
+
+    @Test
+    fun `non-streaming with --reasoning and null content still produces output`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder().code(200)
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","reasoning_content":"Just the reasoning."}}]}""")
+                    .build()
+            )
+
+            val originalOut = System.out
+            val captured = ByteArrayOutputStream()
+            try {
+                System.setOut(PrintStream(captured, true, Charsets.UTF_8))
+
+                CommandLine(AidCommand()).execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                    "--reasoning",
+                )
+            } finally {
+                System.setOut(originalOut)
+            }
+
+            String(captured.toByteArray(), Charsets.UTF_8)
+                .shouldContain("Reasoning")
+                .shouldContain("Just the reasoning.")
+        }
+    }
+
+    @Test
+    fun `streaming with --reasoning includes blockquote reasoning before content`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        val sseBody = buildString {
+            // reasoning deltas
+            appendLine("""data: {"id":"1","choices":[{"index":0,"delta":{"reasoning_content":"Let me"},"finish_reason":null}]}""")
+            appendLine()
+            appendLine("""data: {"id":"1","choices":[{"index":0,"delta":{"reasoning_content":" think..."},"finish_reason":null}]}""")
+            appendLine()
+            // content deltas
+            appendLine("""data: {"id":"1","choices":[{"index":0,"delta":{"content":"The"},"finish_reason":null}]}""")
+            appendLine()
+            appendLine("""data: {"id":"1","choices":[{"index":0,"delta":{"content":" answer"},"finish_reason":"stop"}]}""")
+            appendLine()
+            appendLine("data: [DONE]")
+            appendLine()
+        }
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder()
+                    .code(200)
+                    .headers(Headers.Builder().add("Content-Type", "text/event-stream").build())
+                    .body(sseBody)
+                    .build()
+            )
+
+            val originalOut = System.out
+            val captured = ByteArrayOutputStream()
+            try {
+                System.setOut(PrintStream(captured, true, Charsets.UTF_8))
+
+                CommandLine(AidCommand()).execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                    "--stream",
+                    "--reasoning",
+                )
+            } finally {
+                System.setOut(originalOut)
+            }
+
+            val output = String(captured.toByteArray(), Charsets.UTF_8)
+            output.shouldContain("> **Reasoning**")
+                .shouldContain("Let me think...")
+                .shouldContain("The answer")
+            // reasoning before content
+            output.indexOf("Reasoning") shouldBeLessThan output.indexOf("The answer")
+        }
+    }
+
+    @Test
+    fun `streaming without --reasoning skips reasoning deltas`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        val sseBody = buildString {
+            appendLine("""data: {"id":"1","choices":[{"index":0,"delta":{"reasoning_content":"secret reasoning"},"finish_reason":null}]}""")
+            appendLine()
+            appendLine("""data: {"id":"1","choices":[{"index":0,"delta":{"content":"Visible"},"finish_reason":"stop"}]}""")
+            appendLine()
+            appendLine("data: [DONE]")
+            appendLine()
+        }
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder()
+                    .code(200)
+                    .headers(Headers.Builder().add("Content-Type", "text/event-stream").build())
+                    .body(sseBody)
+                    .build()
+            )
+
+            val originalOut = System.out
+            val captured = ByteArrayOutputStream()
+            try {
+                System.setOut(PrintStream(captured, true, Charsets.UTF_8))
+
+                CommandLine(AidCommand()).execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                    "--stream",
+                )
+            } finally {
+                System.setOut(originalOut)
+            }
+
+            String(captured.toByteArray(), Charsets.UTF_8)
+                .shouldNotContain("secret reasoning")
+                .shouldNotContain("Reasoning")
+                .shouldContain("Visible")
+        }
+    }
+
+    @Test
+    fun `streaming with --reasoning and multi-line reasoning produces valid blockquote`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        val sseBody = buildString {
+            appendLine("""data: {"id":"1","choices":[{"index":0,"delta":{"reasoning_content":"Line one\nLine two"},"finish_reason":null}]}""")
+            appendLine()
+            appendLine("""data: {"id":"1","choices":[{"index":0,"delta":{"content":"Answer"},"finish_reason":"stop"}]}""")
+            appendLine()
+            appendLine("data: [DONE]")
+            appendLine()
+        }
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder()
+                    .code(200)
+                    .headers(Headers.Builder().add("Content-Type", "text/event-stream").build())
+                    .body(sseBody)
+                    .build()
+            )
+
+            val originalOut = System.out
+            val captured = ByteArrayOutputStream()
+            try {
+                System.setOut(PrintStream(captured, true, Charsets.UTF_8))
+
+                CommandLine(AidCommand()).execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                    "--stream",
+                    "--reasoning",
+                )
+            } finally {
+                System.setOut(originalOut)
+            }
+
+            // Each line of reasoning must be prefixed with "> "
+            String(captured.toByteArray(), Charsets.UTF_8)
+                .shouldContain("> Line one")
+                .shouldContain("> Line two")
+                .shouldContain("Answer")
+        }
+    }
+
+    @Test
+    fun `streaming with --reasoning and interleaved reasoning produces valid blockquotes`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        val sseBody = buildString {
+            appendLine("""data: {"id":"1","choices":[{"index":0,"delta":{"content":"Answer one"}}]}""")
+            appendLine()
+            appendLine("""data: {"id":"1","choices":[{"index":0,"delta":{"reasoning_content":"Reasoning one\nReasoning two"}}]}""")
+            appendLine()
+            appendLine("""data: {"id":"1","choices":[{"index":0,"delta":{"content":"Answer two"}}]}""")
+            appendLine()
+            appendLine("""data: {"id":"1","choices":[{"index":0,"delta":{"reasoning_content":"Reasoning three"},"finish_reason":"stop"}]}""")
+            appendLine()
+            appendLine("data: [DONE]")
+            appendLine()
+        }
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder()
+                    .code(200)
+                    .headers(Headers.Builder().add("Content-Type", "text/event-stream").build())
+                    .body(sseBody)
+                    .build()
+            )
+
+            val originalOut = System.out
+            val captured = ByteArrayOutputStream()
+            try {
+                System.setOut(PrintStream(captured, true, Charsets.UTF_8))
+
+                CommandLine(AidCommand()).execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                    "--stream",
+                    "--reasoning",
+                )
+            } finally {
+                System.setOut(originalOut)
+            }
+
+            String(captured.toByteArray(), Charsets.UTF_8)
+                .shouldContain("Answer one")
+                .shouldContain("\nAnswer two") // with new line before second answer
+                .shouldContain("> Reasoning one")
+                .shouldContain("> Reasoning two")
+                .shouldContain("> Reasoning three")
         }
     }
 }

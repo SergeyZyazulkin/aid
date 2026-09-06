@@ -320,7 +320,6 @@ class LlmClientTest {
             model = "dummy",
             connectTimeoutSec = 5,
             readTimeoutSec = 60,
-            requestStreamUsage = true,
         )
         val mockResponseBody = """
         {
@@ -369,6 +368,7 @@ class LlmClientTest {
             model = "dummy",
             connectTimeoutSec = 5,
             readTimeoutSec = 60,
+            requestStreamUsage = true,
         )
 
         val sseBody = buildString {
@@ -409,5 +409,34 @@ class LlmClientTest {
         usage.totalTokens shouldBe 139
         usage.promptTokensDetails.shouldBeNull()
         usage.completionTokensDetails.shouldBeNull()
+    }
+
+    @Test
+    fun `chat throws on missing content`() {
+        val config = LlmClient.Config(
+            url = "http://localhost:1234",
+            model = "dummy",
+            connectTimeoutSec = 5,
+            readTimeoutSec = 60,
+        )
+        val mockResponseBody = """{"choices":[{"index":0,"message":{"role":"assistant","content":null,"reasoning_content":null}}]}"""
+
+        val mockCall = mockk<Call>()
+        mockkConstructor(OkHttpClient::class)
+        every { anyConstructed<OkHttpClient>().newCall(any()) } returns mockCall
+        every { mockCall.execute() } answers {
+            Response.Builder()
+                .request(Request.Builder().url(config.url).build())
+                .protocol(Protocol.HTTP_1_1)
+                .code(200)
+                .message("OK")
+                .body(mockResponseBody.toResponseBody("application/json".toMediaType()))
+                .build()
+        }
+
+        val client = LlmClient(config)
+        assertThrows<IllegalArgumentException> {
+            client.chat(LlmClient.Prompt("sys", null, "code"))
+        }.message.shouldContain("requires at least one of content or reasoningContent")
     }
 }

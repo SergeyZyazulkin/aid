@@ -221,6 +221,18 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
     var contextLines: Int? = null
         private set
 
+    @CommandLine.Option(
+        names = ["--reasoning"],
+        required = false,
+        defaultValue = "false",
+        description = [
+            "Include the model's reasoning_content in the output",
+            "as a Markdown blockquote before the main answer",
+        ],
+    )
+    var includeReasoning: Boolean = false
+        private set
+
     override fun run() {
         ProgressLogger(enabled = progress).use { progressLogger ->
             val resolvedApiKey = apiKey ?: environment["AID_API_KEY"]
@@ -283,27 +295,39 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
 
     private fun LlmClient.renderStreamChat(prompt: LlmClient.Prompt, progressLogger: ProgressLogger) {
         progressLogger.progress("Sending streaming request to LLM...")
-        var printingStarted = false
+        val resultWriter = ResultWriter()
         val chatUsage: Usage? = chatStream(
             prompt,
             onDelta = { delta ->
-                if (!printingStarted) {
-                    printingStarted = true
-                    progressLogger.progress("Printing result...")
-                }
-                print(delta)
-                System.out.flush() // explicit flushing
-            }
+                // Relies on ProgressLogger deduplication to avoid re-logging on every delta
+                progressLogger.progress("Printing result...")
+                resultWriter.writeContent(delta)
+            },
+            onReasoningDelta = if (includeReasoning) { delta ->
+                // Relies on ProgressLogger deduplication to avoid re-logging on every delta
+                progressLogger.progress("Printing reasoning...")
+                resultWriter.writeReasoning(delta)
+            } else null,
         )
+        resultWriter.finish()
         if (usage) printUsage(chatUsage)
-        println() // trailing newline after streamed output
     }
 
     private fun LlmClient.renderChat(prompt: LlmClient.Prompt, progressLogger: ProgressLogger) {
         progressLogger.progress("Sending request to LLM...")
         val result = chat(prompt)
-        progressLogger.progress("Printing result...")
-        println(result.content)
+        val resultWriter = ResultWriter()
+        if (includeReasoning) {
+            result.reasoningContent?.let {
+                progressLogger.progress("Printing reasoning...")
+                resultWriter.writeReasoning(it)
+            }
+        }
+        result.content?.let {
+            progressLogger.progress("Printing result...")
+            resultWriter.writeContent(it)
+        }
+        resultWriter.finish()
         if (usage) printUsage(result.usage)
     }
 

@@ -1,6 +1,8 @@
 package dev.sz.aid
 
 import io.kotest.assertions.throwables.shouldThrow
+import io.kotest.matchers.ints.shouldBeGreaterThan
+import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldMatch
 import io.kotest.matchers.string.shouldNotContain
@@ -131,5 +133,21 @@ class ProgressLoggerTest {
             .shouldContain("Second")
             .shouldContain("Third")
             .shouldNotContain("Waiting...")
+    }
+
+    @Test
+    fun `progress deduplicates identical consecutive messages`() {
+        val buf = ByteArrayOutputStream()
+        val out = PrintStream(buf, true, Charsets.UTF_8)
+        ProgressLogger(enabled = true, out = out, waitIntervalSec = 999).use {
+            it.progress("Step A")
+            it.progress("Step A") // should not re-log
+            it.progress("Step B") // should log
+            it.progress("Step A") // should log
+        }
+        val lines: List<String> = String(buf.toByteArray(), Charsets.UTF_8).lines()
+        lines.count { it.contains("Step A") } shouldBe 2
+        lines.count { it.contains("Step B") } shouldBe 1
+        lines.indexOfLast { it.contains("Step A") } shouldBeGreaterThan lines.indexOfLast { it.contains("Step B") }
     }
 }

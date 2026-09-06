@@ -69,3 +69,7 @@ All notable changes to this project will be documented in this file.
 ## [1.13.0] - 2026-09-01
 ### Added
 - Added `-U`/`--context-lines` option to control the number of context lines in diff output (passed as `-U<N>` to `git diff`).
+
+## [1.14.0] - 2026-09-06
+### Added
+- Added `--reasoning` flag to include the model's `reasoning_content` in the output as a Markdown blockquote before the main answer. Works in both standard and `--stream` modes.

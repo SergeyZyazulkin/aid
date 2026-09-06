@@ -13,6 +13,7 @@ A lightweight CLI code assistant that leverages local Ollama instances (or any O
 - **Configurable output language**: Supports English and Russian.
 - **Token usage reporting**: Print LLM token usage to stderr with `--usage`.
 - **Configurable diff context**: Control surrounding lines in diff output with `--context-lines` (`-U`).
+- **Reasoning output**: Include the model's internal reasoning in the result with `--reasoning` (rendered as a Markdown blockquote).
 
 ## Prerequisites
 
@@ -65,6 +66,11 @@ export AID_API_KEY=<key>
 ### Stream partial results with progress tracking
 ```sh
 ./aid -d=<repo_path> -m=<model_name> -s=all -u=<api_url> --stream --progress > <output_path>
+```
+
+### Include model reasoning in output
+```sh
+./aid -d=<repo_path> -m=<model_name> -s=diff -u=<api_url> --reasoning > <output_path>
 ```
 
 ### Arguments from files

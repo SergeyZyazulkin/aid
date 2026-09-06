@@ -47,13 +47,21 @@ class LlmClient(val config: Config) {
 
         val response: ChatCompletionResponse = json.decodeFromString(responseBody)
 
-        val responseContent: String = response.choices.firstOrNull()?.message?.content
+        val message: ChatCompletionResponse.Choice.ChatMessage = response.choices.firstOrNull()?.message
             ?: throw IOException("No LLM response message: $responseBody")
 
-        return ChatResult(responseContent, response.usage)
+        return ChatResult(
+            content = message.content,
+            reasoningContent = message.reasoningContent?.takeIf { it.isNotEmpty() },
+            usage = response.usage,
+        )
     }
 
-    fun chatStream(prompt: Prompt, onDelta: (String) -> Unit): Usage? {
+    fun chatStream(
+        prompt: Prompt,
+        onDelta: (String) -> Unit,
+        onReasoningDelta: ((String) -> Unit)? = null,
+    ): Usage? {
         val request: Request = buildChatRequest(prompt, stream = true)
         var usage: Usage? = null
 
@@ -77,8 +85,13 @@ class LlmClient(val config: Config) {
                         throw IllegalStateException("Invalid LLM data: $data", e)
                     }
 
-                    val content: String? = chunk.choices.firstOrNull()?.delta?.content
+                    val delta: ChatCompletionStreamResponse.StreamDelta? = chunk.choices.firstOrNull()?.delta
+                    val content: String? = delta?.content
                     if (!content.isNullOrEmpty()) onDelta(content)
+
+                    val reasoning: String? = delta?.reasoningContent
+                    if (!reasoning.isNullOrEmpty()) onReasoningDelta?.invoke(reasoning)
+
                     chunk.usage?.let { usage = it }
                 }
             }
@@ -152,9 +165,9 @@ class LlmClient(val config: Config) {
     }
 
     private fun Prompt.toRequest(stream: Boolean): ChatCompletionRequest {
-        val chatMessages: List<ChatMessage> = listOf(
-            ChatMessage("system", systemMessage),
-            ChatMessage("user", combinedUserMessage)
+        val chatMessages: List<ChatCompletionRequest.ChatMessage> = listOf(
+            ChatCompletionRequest.ChatMessage("system", systemMessage),
+            ChatCompletionRequest.ChatMessage("user", combinedUserMessage)
         )
 
         val thinkingConfig: ChatCompletionRequest.ExtraBody? = if (config.forceThinking) {

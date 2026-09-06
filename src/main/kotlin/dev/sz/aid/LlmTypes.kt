@@ -3,16 +3,21 @@ package dev.sz.aid
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+/**
+ * LLM chat response. At least one of [content] or [reasoningContent] is non-null.
+ */
 data class ChatResult(
-    val content: String,
+    val content: String?,
+    val reasoningContent: String?,
     val usage: Usage?,
-)
-
-@Serializable
-data class ChatMessage(
-    val role: String,
-    val content: String
-)
+) {
+    init {
+        require(content != null || reasoningContent != null) {
+            "ChatResult requires at least one of content or reasoningContent, " +
+                    "but both were null. Raw response may be malformed."
+        }
+    }
+}
 
 @Serializable
 data class ChatCompletionRequest(
@@ -27,6 +32,12 @@ data class ChatCompletionRequest(
     @SerialName("stream_options")
     val streamOptions: StreamOptions? = null,
 ) {
+    @Serializable
+    data class ChatMessage(
+        val role: String,
+        val content: String,
+    )
+
     @Serializable
     data class ExtraBody(
         @SerialName("enable_thinking")
@@ -82,7 +93,15 @@ data class ChatCompletionResponse(
         val message: ChatMessage? = null,
         @SerialName("finish_reason")
         val finishReason: String? = null
-    )
+    ) {
+        @Serializable
+        data class ChatMessage(
+            val role: String,
+            val content: String? = null,
+            @SerialName("reasoning_content")
+            val reasoningContent: String? = null,
+        )
+    }
 }
 
 @Serializable
@@ -103,6 +122,8 @@ data class ChatCompletionStreamResponse(
     @Serializable
     data class StreamDelta(
         val role: String? = null,
-        val content: String? = null
+        val content: String? = null,
+        @SerialName("reasoning_content")
+        val reasoningContent: String? = null,
     )
 }

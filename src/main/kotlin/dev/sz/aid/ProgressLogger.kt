@@ -23,6 +23,7 @@ class ProgressLogger(
             Thread(r, "progress-logger").apply { isDaemon = true }
         }
     } else null
+    private var currentProgress: String? = null
 
     init {
         require(waitIntervalSec > 0) { "waitIntervalSec must be positive" }
@@ -34,10 +35,12 @@ class ProgressLogger(
     }
 
     /**
-     * Logs [message] and (re)starts the periodic "Waiting..." indicator.
+     * If [message] differs from the previous call,
+     * logs [message] and (re)starts the periodic "Waiting..." indicator.
      */
     fun progress(message: String) {
-        if (!enabled) return
+        if (!enabled || message == currentProgress) return
+        currentProgress = message
         log(message)
         scheduleWaitLog()
     }
