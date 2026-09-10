@@ -233,6 +233,19 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
     var includeReasoning: Boolean = false
         private set
 
+    @CommandLine.Option(
+        converter = [Prompts.Version.Converter::class],
+        names = ["--prompt-version"],
+        required = false,
+        defaultValue = "v1",
+        description = [
+            "Version of built-in system prompts to use: v1, v2;",
+            "(default: v1)",
+        ],
+    )
+    var promptVersion = Prompts.Version.V1
+        private set
+
     override fun run() {
         ProgressLogger(enabled = progress).use { progressLogger ->
             val resolvedApiKey = apiKey ?: environment["AID_API_KEY"]
@@ -274,7 +287,11 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
     }
 
     private fun buildPrompt(code: String): LlmClient.Prompt {
-        val baseSystemMessage: String = if (promptPath != null) Prompts.custom else Prompts.review
+        val baseSystemMessage: String = if (promptPath != null) {
+            Prompts.custom(promptVersion)
+        } else {
+            Prompts.review(promptVersion)
+        }
         val langDirective = lang.directiveResource?.let { Prompts.readSystemDirective(it) }
         val systemMessage: String = langDirective?.let { "$baseSystemMessage\n\n$it" } ?: baseSystemMessage
         val userMessage: String? = promptPath?.let { Prompts.readUserPrompt(it) }

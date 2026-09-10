@@ -52,6 +52,7 @@ class AidCommandTest {
         cmd.usage shouldBe false
         cmd.contextLines shouldBe null
         cmd.includeReasoning shouldBe false
+        cmd.promptVersion shouldBe Prompts.Version.V1
     }
 
     @Test
@@ -162,6 +163,17 @@ class AidCommandTest {
     }
 
     @Test
+    fun `parses prompt-version option correctly`() {
+        val cmd = CommandLine.populateCommand(
+            AidCommand(),
+            "-d", "/test/repo",
+            "-m", "llama3",
+            "--prompt-version", "v2",
+        )
+        cmd.promptVersion shouldBe Prompts.Version.V2
+    }
+
+    @Test
     fun `rejects invalid scope`() {
         assertThrows<CommandLine.ParameterException> {
             CommandLine.populateCommand(
@@ -214,6 +226,18 @@ class AidCommandTest {
                 "-S", "",
             ).run()
         }.message.shouldContain("empty string is not a valid pathspec")
+    }
+
+    @Test
+    fun `rejects invalid prompt-version`() {
+        assertThrows<CommandLine.ParameterException> {
+            CommandLine.populateCommand(
+                AidCommand(),
+                "-d", "/test/repo",
+                "-m", "test",
+                "--prompt-version", "v99",
+            )
+        }.message.shouldContain("--prompt-version")
     }
 
     @Test

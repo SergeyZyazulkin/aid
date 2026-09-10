@@ -72,10 +72,10 @@ Produce the review in this structure:
 
 - Bullet list of serious issues that should block merge.
 - For each item, include:
-  - Severity
-  - Why it matters
-  - Concrete change needed
-  - Code suggestion
+    - Severity
+    - Why it matters
+    - Concrete change needed
+    - Code suggestion
 - If there are no blocking issues, write `- None.`
 
 ### Improvements
@@ -83,9 +83,9 @@ Produce the review in this structure:
 - Bullet list of non-blocking but worthwhile improvements.
 - Focus on simplification, better structure, and maintainability.
 - For each item, include:
-  - Why it matters
-  - Concrete change needed
-  - Code suggestion
+    - Why it matters
+    - Concrete change needed
+    - Code suggestion
 - If none, write `- None.`
 
 ### Notable refactorings
@@ -93,17 +93,17 @@ Produce the review in this structure:
 - List the best opportunities to make the implementation smaller, simpler, or more direct while preserving behavior.
 - Prefer proposing 1 to 3 high-value restructurings over many small nits.
 - For each refactoring, include:
-  - Why it helps
-  - First practical step
-  - Code suggestion
+    - Why it helps
+    - First practical step
+    - Code suggestion
 - If none, write `- None.`
 
 ### Risk assessment
 
 - Evaluate risks introduced by the change across:
-  - Compatibility
-  - Security
-  - Maintainability
+    - Compatibility
+    - Security
+    - Maintainability
 - Highlight only meaningful risks; avoid noise.
 - For each risk, include impact and a concrete mitigation.
 - Add a code suggestion only when a local mitigation is obvious.

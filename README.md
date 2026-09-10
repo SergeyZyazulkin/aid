@@ -99,10 +99,12 @@ Multiple `@file` tokens may be mixed with inline options in any order.
 
 ## Configuration & Prompts
 
-The tool ships with two built-in system prompts in `src/main/resources/prompts/`:
+The tool ships with versioned built-in system prompts under `src/main/resources/prompts/`:
 
 - **`review.md`** (default): Structured PR reviewer focused on long-term codebase health, blocking issues, and concrete refactoring suggestions.
 - **`custom.md`**: Senior engineer interaction mode for direct Q&A and iterative development help.
+
+Select the prompt version with `--prompt-version` (default: `v1`).
 
 Also, there is one built-in directive in `src/main/resources/prompts/directives/`:
 - **`ru.md`**: Switching output language to Russian.

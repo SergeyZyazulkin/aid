@@ -73,3 +73,8 @@ All notable changes to this project will be documented in this file.
 ## [1.14.0] - 2026-09-06
 ### Added
 - Added `--reasoning` flag to include the model's `reasoning_content` in the output as a Markdown blockquote before the main answer. Works in both standard and `--stream` modes.
+
+## [1.15.0] - 2026-09-07
+### Added
+- Added a new version of built-in system prompts (`review.md`, `custom.md`). The original version is used by default.
+- Added `--prompt-version` option to select the version of built-in system prompts: `v1`, `v2`. Default is `v1`.

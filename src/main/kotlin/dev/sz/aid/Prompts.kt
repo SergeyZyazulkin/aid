@@ -1,5 +1,6 @@
 package dev.sz.aid
 
+import picocli.CommandLine
 import java.nio.file.Paths
 import kotlin.io.path.bufferedReader
 import kotlin.io.path.exists
@@ -9,8 +10,11 @@ private const val DIRECTIVE_DIR = "directives"
 
 object Prompts {
 
-    val review: String by lazy { readSystemPrompt("review.md") }
-    val custom: String by lazy { readSystemPrompt("custom.md") }
+    fun review(version: Version): String = readSystemPrompt(buildFullName(version, "review.md"))
+
+    fun custom(version: Version): String = readSystemPrompt(buildFullName(version, "custom.md"))
+
+    private fun buildFullName(version: Version, name: String) = "${version.dir}/$name"
 
     fun readUserPrompt(strPath: String): String {
         val path = Paths.get(strPath)
@@ -29,4 +33,13 @@ object Prompts {
         ?.use { it.readText() }
         ?.trim()
         ?: error("Missing prompt resource: $name")
+
+    enum class Version(val dir: String) {
+        V1("v1"),
+        V2("v2");
+
+        class Converter : CommandLine.ITypeConverter<Version> {
+            override fun convert(value: String): Version = valueOf(value.uppercase())
+        }
+    }
 }

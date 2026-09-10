@@ -12,13 +12,17 @@ import kotlin.test.Test
 class PromptsTest {
 
     @Test
-    fun `review prompt loads from resources`() {
-        Prompts.review.shouldNotBeEmpty()
+    fun `review prompts load from resources`() {
+        for (version in Prompts.Version.entries) {
+            Prompts.review(version).shouldNotBeEmpty()
+        }
     }
 
     @Test
-    fun `custom prompt loads from resources`() {
-        Prompts.custom.shouldNotBeEmpty()
+    fun `custom prompts load from resources`() {
+        for (version in Prompts.Version.entries) {
+            Prompts.custom(version).shouldNotBeEmpty()
+        }
     }
 
     @Test
