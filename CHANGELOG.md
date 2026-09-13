@@ -78,3 +78,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Added a new version of built-in system prompts (`review.md`, `custom.md`). The original version is used by default.
 - Added `--prompt-version` option to select the version of built-in system prompts: `v1`, `v2`. Default is `v1`.
+
+## [1.16.0] - 2026-09-13
+### Added
+- Added `--prompt-version none` to disable system prompts entirely: no system message is sent to the LLM.

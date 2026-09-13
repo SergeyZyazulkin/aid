@@ -1,5 +1,6 @@
 package dev.sz.aid
 
+import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotBeEmpty
@@ -14,14 +15,24 @@ class PromptsTest {
     @Test
     fun `review prompts load from resources`() {
         for (version in Prompts.Version.entries) {
-            Prompts.review(version).shouldNotBeEmpty()
+            val result = version.reviewPrompt()
+            if (version == Prompts.Version.NONE) {
+                result.shouldBeNull()
+            } else {
+                result.shouldNotBeEmpty()
+            }
         }
     }
 
     @Test
     fun `custom prompts load from resources`() {
         for (version in Prompts.Version.entries) {
-            Prompts.custom(version).shouldNotBeEmpty()
+            val result = version.customPrompt()
+            if (version == Prompts.Version.NONE) {
+                result.shouldBeNull()
+            } else {
+                result.shouldNotBeEmpty()
+            }
         }
     }
 

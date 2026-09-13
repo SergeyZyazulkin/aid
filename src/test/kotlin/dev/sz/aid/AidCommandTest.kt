@@ -174,6 +174,17 @@ class AidCommandTest {
     }
 
     @Test
+    fun `parses prompt-version none correctly`() {
+        val cmd = CommandLine.populateCommand(
+            AidCommand(),
+            "-d", "/test/repo",
+            "-m", "llama3",
+            "--prompt-version", "none",
+        )
+        cmd.promptVersion shouldBe Prompts.Version.NONE
+    }
+
+    @Test
     fun `rejects invalid scope`() {
         assertThrows<CommandLine.ParameterException> {
             CommandLine.populateCommand(
@@ -1617,6 +1628,120 @@ class AidCommandTest {
                 .shouldContain("> Reasoning one")
                 .shouldContain("> Reasoning two")
                 .shouldContain("> Reasoning three")
+        }
+    }
+
+    @Test
+    fun `--prompt-version none omits system message from request`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder()
+                    .code(200)
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}""")
+                    .build()
+            )
+
+            CommandLine(AidCommand())
+                .execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                    "--prompt-version", "none",
+                )
+
+            llmServer.takeRequest(0, TimeUnit.SECONDS) shouldNotBeNull {
+                body shouldNotBeNull {
+                    string(Charsets.UTF_8)
+                        .shouldContain("\"user\"")
+                        .shouldContain("code")
+                        .shouldNotContain("\"system\"")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `--prompt-version none with custom prompt still omits system message`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+        val promptFile = createTempFile("prompt", ".md")
+        Files.write(promptFile, "My custom question\n".toByteArray())
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder()
+                    .code(200)
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}""")
+                    .build()
+            )
+
+            CommandLine(AidCommand())
+                .execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                    "--prompt", promptFile.absolutePathString(),
+                    "--prompt-version", "none",
+                )
+
+            llmServer.takeRequest(0, TimeUnit.SECONDS) shouldNotBeNull {
+                body shouldNotBeNull {
+                    string(Charsets.UTF_8)
+                        .shouldContain("My custom question")
+                        .shouldNotContain("\"system\"")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `lang directive is included even with --prompt-version none`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder()
+                    .code(200)
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}""")
+                    .build()
+            )
+
+            CommandLine(AidCommand())
+                .execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                    "--prompt-version", "none",
+                    "--lang", "ru",
+                )
+
+            llmServer.takeRequest(0, TimeUnit.SECONDS) shouldNotBeNull {
+                body shouldNotBeNull {
+                    string(Charsets.UTF_8)
+                        .shouldContain("\"user\"")
+                        .shouldContain("\"system\"")
+                        .shouldContain("Respond entirely in Russian.")
+                }
+            }
         }
     }
 }

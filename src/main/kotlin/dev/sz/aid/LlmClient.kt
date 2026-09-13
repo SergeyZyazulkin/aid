@@ -152,7 +152,7 @@ class LlmClient(val config: Config) {
     }
 
     data class Prompt(
-        val systemMessage: String,
+        val systemMessage: String?,
         val userMessage: String?,
         val code: String
     ) {
@@ -165,10 +165,10 @@ class LlmClient(val config: Config) {
     }
 
     private fun Prompt.toRequest(stream: Boolean): ChatCompletionRequest {
-        val chatMessages: List<ChatCompletionRequest.ChatMessage> = listOf(
-            ChatCompletionRequest.ChatMessage("system", systemMessage),
-            ChatCompletionRequest.ChatMessage("user", combinedUserMessage)
-        )
+        val chatMessages: List<ChatCompletionRequest.ChatMessage> = buildList {
+            systemMessage?.let { add(ChatCompletionRequest.ChatMessage("system", it)) }
+            add(ChatCompletionRequest.ChatMessage("user", combinedUserMessage))
+        }
 
         val thinkingConfig: ChatCompletionRequest.ExtraBody? = if (config.forceThinking) {
             ChatCompletionRequest.ExtraBody(

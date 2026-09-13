@@ -287,13 +287,17 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
     }
 
     private fun buildPrompt(code: String): LlmClient.Prompt {
-        val baseSystemMessage: String = if (promptPath != null) {
-            Prompts.custom(promptVersion)
+        val baseSystemMessage: String? = if (promptPath != null) {
+            promptVersion.customPrompt()
         } else {
-            Prompts.review(promptVersion)
+            promptVersion.reviewPrompt()
         }
-        val langDirective = lang.directiveResource?.let { Prompts.readSystemDirective(it) }
-        val systemMessage: String = langDirective?.let { "$baseSystemMessage\n\n$it" } ?: baseSystemMessage
+        val langDirective: String? = lang.directiveResource?.let { Prompts.readSystemDirective(it) }
+        val systemMessage: String? = if (baseSystemMessage != null && langDirective != null) {
+            "$baseSystemMessage\n\n$langDirective"
+        } else {
+            baseSystemMessage ?: langDirective
+        }
         val userMessage: String? = promptPath?.let { Prompts.readUserPrompt(it) }
         return LlmClient.Prompt(systemMessage, userMessage, code)
     }

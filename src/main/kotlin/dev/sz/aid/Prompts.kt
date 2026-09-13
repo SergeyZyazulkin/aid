@@ -10,12 +10,6 @@ private const val DIRECTIVE_DIR = "directives"
 
 object Prompts {
 
-    fun review(version: Version): String = readSystemPrompt(buildFullName(version, "review.md"))
-
-    fun custom(version: Version): String = readSystemPrompt(buildFullName(version, "custom.md"))
-
-    private fun buildFullName(version: Version, name: String) = "${version.dir}/$name"
-
     fun readUserPrompt(strPath: String): String {
         val path = Paths.get(strPath)
         require(path.exists()) { "Prompt file does not exist: $strPath" }
@@ -34,9 +28,20 @@ object Prompts {
         ?.trim()
         ?: error("Missing prompt resource: $name")
 
-    enum class Version(val dir: String) {
+    enum class Version(val dir: String?) {
         V1("v1"),
-        V2("v2");
+        V2("v2"),
+        NONE(null);
+
+        fun reviewPrompt(): String? = readVersionedSystemPrompt("review.md")
+
+        fun customPrompt(): String? = readVersionedSystemPrompt("custom.md")
+
+        private fun readVersionedSystemPrompt(name: String): String? = if (dir != null) {
+            readSystemPrompt("$dir/$name")
+        } else {
+            null
+        }
 
         class Converter : CommandLine.ITypeConverter<Version> {
             override fun convert(value: String): Version = valueOf(value.uppercase())

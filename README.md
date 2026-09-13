@@ -104,7 +104,7 @@ The tool ships with versioned built-in system prompts under `src/main/resources/
 - **`review.md`** (default): Structured PR reviewer focused on long-term codebase health, blocking issues, and concrete refactoring suggestions.
 - **`custom.md`**: Senior engineer interaction mode for direct Q&A and iterative development help.
 
-Select the prompt version with `--prompt-version` (default: `v1`).
+Select the prompt version with `--prompt-version`: `v1` (default), `v2`, or `none` (disables system prompts entirely).
 
 Also, there is one built-in directive in `src/main/resources/prompts/directives/`:
 - **`ru.md`**: Switching output language to Russian.
