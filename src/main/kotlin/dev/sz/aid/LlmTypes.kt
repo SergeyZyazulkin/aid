@@ -23,9 +23,6 @@ data class ChatResult(
 data class ChatCompletionRequest(
     val model: String,
     val messages: List<ChatMessage>,
-    val temperature: Double? = null,
-    @SerialName("max_tokens")
-    val maxTokens: Int? = null,
     val stream: Boolean = false,
     @SerialName("extra_body")
     val extraBody: ExtraBody? = null,
@@ -83,20 +80,15 @@ data class Usage(
 
 @Serializable
 data class ChatCompletionResponse(
-    val id: String? = null,
     val choices: List<Choice> = emptyList(),
     val usage: Usage? = null,
 ) {
     @Serializable
     data class Choice(
-        val index: Int,
         val message: ChatMessage? = null,
-        @SerialName("finish_reason")
-        val finishReason: String? = null
     ) {
         @Serializable
         data class ChatMessage(
-            val role: String,
             val content: String? = null,
             @SerialName("reasoning_content")
             val reasoningContent: String? = null,
@@ -106,22 +98,16 @@ data class ChatCompletionResponse(
 
 @Serializable
 data class ChatCompletionStreamResponse(
-    val id: String? = null,
-    val obj: String? = null,
     val choices: List<StreamChoice> = emptyList(),
     val usage: Usage? = null,
 ) {
     @Serializable
     data class StreamChoice(
-        val index: Int,
         val delta: StreamDelta? = null,
-        @SerialName("finish_reason")
-        val finishReason: String? = null
     )
 
     @Serializable
     data class StreamDelta(
-        val role: String? = null,
         val content: String? = null,
         @SerialName("reasoning_content")
         val reasoningContent: String? = null,

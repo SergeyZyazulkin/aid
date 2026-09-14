@@ -82,3 +82,5 @@ All notable changes to this project will be documented in this file.
 ## [1.16.0] - 2026-09-13
 ### Added
 - Added `--prompt-version none` to disable system prompts entirely: no system message is sent to the LLM.
+
+## [1.16.1] - 2026-09-14
