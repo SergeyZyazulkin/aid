@@ -14,6 +14,7 @@ A lightweight CLI code assistant that leverages local Ollama instances (or any O
 - **Token usage reporting**: Print LLM token usage to stderr with `--usage`.
 - **Configurable diff context**: Control surrounding lines in diff output with `--context-lines` (`-U`).
 - **Reasoning output**: Include the model's internal reasoning in the result with `--reasoning` (rendered as a Markdown blockquote).
+- **Argument inspection**: Print all parsed CLI arguments to stderr with `--print-args` (API key is masked).
 
 ## Prerequisites
 

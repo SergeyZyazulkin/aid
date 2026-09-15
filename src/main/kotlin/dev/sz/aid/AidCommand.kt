@@ -246,7 +246,17 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
     var promptVersion = Prompts.Version.V1
         private set
 
+    @CommandLine.Option(
+        names = ["--print-args"],
+        required = false,
+        defaultValue = "false",
+        description = ["Print parsed command-line arguments to stderr"],
+    )
+    var printArgs: Boolean = false
+        private set
+
     override fun run() {
+        if (printArgs) printParsedArgs()
         ProgressLogger(enabled = progress).use { progressLogger ->
             val resolvedApiKey = apiKey ?: environment["AID_API_KEY"]
 
@@ -306,6 +316,33 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
         System.err.println("[CODE] ${code.length} chars:")
         System.err.println(code)
         System.err.println("------")
+    }
+
+    private fun printParsedArgs() {
+        System.err.println("[ARGS]")
+        System.err.println("  --dir = $projectDir")
+        System.err.println("  --scope = $scope")
+        System.err.println("  --commit = $commit")
+        System.err.println("  --sources = $sources")
+        System.err.println("  --filter = $fileFilters")
+        System.err.println("  --url = $url")
+        System.err.println("  --api-key = ${apiKey?.let { "********" }}")
+        System.err.println("  --model = $model")
+        System.err.println("  --connect-timeout = $connectTimeoutSec")
+        System.err.println("  --read-timeout = $readTimeoutSec")
+        System.err.println("  --prompt = $promptPath")
+        System.err.println("  --force-thinking = $forceThinking")
+        System.err.println("  --code-limit = $codeLimit")
+        System.err.println("  --debug-code-content = $debugCodeContent")
+        System.err.println("  --dry-run = $dryRun")
+        System.err.println("  --lang = $lang")
+        System.err.println("  --progress = $progress")
+        System.err.println("  --stream = $stream")
+        System.err.println("  --usage = $usage")
+        System.err.println("  --context-lines = $contextLines")
+        System.err.println("  --reasoning = $includeReasoning")
+        System.err.println("  --prompt-version = $promptVersion")
+        System.err.println("  --print-args = $printArgs")
     }
 
     private fun LlmClient.renderDryRun(prompt: LlmClient.Prompt, progressLogger: ProgressLogger) {

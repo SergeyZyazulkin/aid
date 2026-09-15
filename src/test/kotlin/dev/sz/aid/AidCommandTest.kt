@@ -53,6 +53,7 @@ class AidCommandTest {
         cmd.contextLines shouldBe null
         cmd.includeReasoning shouldBe false
         cmd.promptVersion shouldBe Prompts.Version.V1
+        cmd.printArgs shouldBe false
     }
 
     @Test
@@ -182,6 +183,17 @@ class AidCommandTest {
             "--prompt-version", "none",
         )
         cmd.promptVersion shouldBe Prompts.Version.NONE
+    }
+
+    @Test
+    fun `parses --print-args flag correctly`() {
+        val cmd = CommandLine.populateCommand(
+            AidCommand(),
+            "-d", "/test/repo",
+            "-m", "llama3",
+            "--print-args",
+        )
+        cmd.printArgs shouldBe true
     }
 
     @Test
@@ -1166,7 +1178,7 @@ class AidCommandTest {
             appendLine()
             appendLine("""data: {"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":" world"},"finish_reason":null}]}""")
             appendLine()
-            appendLine("""data: {"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"!"},"finish_reason":"stop"}]},"usage":{"prompt_tokens":200,"completion_tokens":10,"total_tokens":210}}""")
+            appendLine("""data: {"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"!"},"finish_reason":"stop"}],"usage":{"prompt_tokens":200,"completion_tokens":10,"total_tokens":210}}""")
             appendLine()
             appendLine("data: [DONE]")
             appendLine()
@@ -1742,6 +1754,94 @@ class AidCommandTest {
                         .shouldContain("Respond entirely in Russian.")
                 }
             }
+        }
+    }
+
+    @Test
+    fun `--print-args prints options to stderr with api-key masked`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder().code(200)
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}""")
+                    .build()
+            )
+
+            val originalOut = System.out
+            val outBuf = ByteArrayOutputStream()
+            val originalErr = System.err
+            val errBuf = ByteArrayOutputStream()
+            try {
+                System.setOut(PrintStream(outBuf, true, Charsets.UTF_8))
+                System.setErr(PrintStream(errBuf, true, Charsets.UTF_8))
+
+                CommandLine(AidCommand()).execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                    "-k", "secret-key-123",
+                    "--print-args",
+                )
+            } finally {
+                System.setOut(originalOut)
+                System.setErr(originalErr)
+            }
+
+            String(errBuf.toByteArray(), Charsets.UTF_8)
+                .shouldContain("[ARGS]")
+                .shouldContain("--dir = ${gitDir.absolutePathString()}")
+                .shouldContain("--scope = ALL")
+                .shouldContain("--model = test")
+                .shouldContain("--api-key = ********")
+                .shouldNotContain("secret-key-123")
+                .shouldContain("--print-args = true")
+
+            // stdout should still contain the LLM result
+            String(outBuf.toByteArray(), Charsets.UTF_8)
+                .shouldContain("ok")
+        }
+    }
+
+    @Test
+    fun `--print-args does not print when flag is absent`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder().code(200)
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}""")
+                    .build()
+            )
+
+            val originalErr = System.err
+            val errBuf = ByteArrayOutputStream()
+            try {
+                System.setErr(PrintStream(errBuf, true, Charsets.UTF_8))
+
+                CommandLine(AidCommand()).execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                )
+            } finally {
+                System.setErr(originalErr)
+            }
+
+            String(errBuf.toByteArray(), Charsets.UTF_8)
+                .shouldNotContain("[ARGS]")
         }
     }
 }

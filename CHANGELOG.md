@@ -84,3 +84,7 @@ All notable changes to this project will be documented in this file.
 - Added `--prompt-version none` to disable system prompts entirely: no system message is sent to the LLM.
 
 ## [1.16.1] - 2026-09-14
+
+## [1.17.0] - 2026-09-15
+### Added
+- Added `--print-args` flag to print all parsed command-line arguments to stderr. The `--api-key` value is masked as `********`.
