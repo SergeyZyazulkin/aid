@@ -2,8 +2,10 @@ package dev.sz.aid
 
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.comparables.shouldBeLessThan
+import io.kotest.matchers.ints.shouldBeGreaterThan
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldMatch
 import io.kotest.matchers.string.shouldNotContain
@@ -54,6 +56,7 @@ class AidCommandTest {
         cmd.includeReasoning shouldBe false
         cmd.promptVersion shouldBe Prompts.Version.V1
         cmd.printArgs shouldBe false
+        cmd.contextFiles shouldBe emptyList()
     }
 
     @Test
@@ -197,6 +200,19 @@ class AidCommandTest {
     }
 
     @Test
+    fun `parses --context option correctly`() {
+        val cmd = CommandLine.populateCommand(
+            AidCommand(),
+            "-d", "/test/repo",
+            "-m", "llama3",
+            "--context", "/path/to/issue.md",
+            "--context", "/path/to/trace.txt",
+        )
+        cmd.contextFiles shouldBe listOf(Paths.get("/path/to/issue.md"), Paths.get("/path/to/trace.txt"))
+    }
+
+
+    @Test
     fun `rejects invalid scope`() {
         assertThrows<CommandLine.ParameterException> {
             CommandLine.populateCommand(
@@ -300,6 +316,46 @@ class AidCommandTest {
                 "-f", "**.xml",
             ).run()
         }.message.shouldContain("No code collected (result is blank)")
+    }
+
+    @Test
+    fun `--context with missing file fails with clear error`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        assertThrows<IllegalArgumentException> {
+            CommandLine.populateCommand(
+                AidCommand(),
+                "-d", gitDir.absolutePathString(),
+                "-m", "test",
+                "-s", "all",
+                "--context", "/nonexistent/context.md",
+            ).run()
+        }.message.shouldContain("Context file does not exist:")
+    }
+
+    @Test
+    fun `--context with directory fails with clear error`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        val dir = createTempDirectory("aid-ctx-dir-")
+
+        assertThrows<IllegalArgumentException> {
+            CommandLine.populateCommand(
+                AidCommand(),
+                "-d", gitDir.absolutePathString(),
+                "-m", "test",
+                "-s", "all",
+                "--context", dir.absolutePathString(),
+            ).run()
+        }.message.shouldContain("Not a regular file")
     }
 
     @Test
@@ -1768,7 +1824,8 @@ class AidCommandTest {
         MockWebServer().use { llmServer ->
             llmServer.start()
             llmServer.enqueue(
-                MockResponse.Builder().code(200)
+                MockResponse.Builder()
+                    .code(200)
                     .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}""")
                     .build()
             )
@@ -1820,7 +1877,8 @@ class AidCommandTest {
         MockWebServer().use { llmServer ->
             llmServer.start()
             llmServer.enqueue(
-                MockResponse.Builder().code(200)
+                MockResponse.Builder()
+                    .code(200)
                     .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}""")
                     .build()
             )
@@ -1842,6 +1900,141 @@ class AidCommandTest {
 
             String(errBuf.toByteArray(), Charsets.UTF_8)
                 .shouldNotContain("[ARGS]")
+        }
+    }
+
+    @Test
+    fun `full run with --context appends context sections to user message`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        val issueFile = createTempFile("issue", ".md")
+        Files.write(issueFile, "Bug: NullPointerException at line 42\n".toByteArray())
+        val traceFile = createTempFile("trace", ".txt")
+        Files.write(traceFile, "java.lang.NullPointerException\n\tat com.Foo.bar(Foo.java:42)\n".toByteArray())
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder()
+                    .code(200)
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}""")
+                    .build()
+            )
+
+            CommandLine(AidCommand()).execute(
+                "-d", gitDir.absolutePathString(),
+                "-m", "test",
+                "-s", "all",
+                "-u", llmServer.url("/").toString(),
+                "--context", issueFile.absolutePathString(),
+                "--context", traceFile.absolutePathString(),
+            )
+
+            llmServer.takeRequest(0, TimeUnit.SECONDS) shouldNotBeNull {
+                body shouldNotBeNull {
+                    val body = string(Charsets.UTF_8)
+                    body.shouldContain("## CONTEXT: ${issueFile.fileName} ##")
+                        .shouldContain("Bug: NullPointerException at line 42")
+                        .shouldContain("## CONTEXT: ${traceFile.fileName} ##")
+                        .shouldContain("java.lang.NullPointerException")
+                    // Context must come after code
+                    val codeIdx = body.indexOf("code")
+                    codeIdx shouldNotBe -1
+                    val ctxIdx = body.indexOf("## CONTEXT: ${issueFile.fileName} ##")
+                    ctxIdx shouldBeGreaterThan codeIdx
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `--context with custom prompt places context after prompt and code`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "some code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        val promptFile = createTempFile("prompt", ".md")
+        Files.write(promptFile, "Explain this bug\n".toByteArray())
+        val ctxFile = createTempFile("ctx", ".md")
+        Files.write(ctxFile, "Stack trace here\n".toByteArray())
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder()
+                    .code(200)
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}""")
+                    .build()
+            )
+
+            CommandLine(AidCommand()).execute(
+                "-d", gitDir.absolutePathString(),
+                "-m", "test",
+                "-s", "all",
+                "-u", llmServer.url("/").toString(),
+                "--prompt", promptFile.absolutePathString(),
+                "--context", ctxFile.absolutePathString(),
+            )
+
+            llmServer.takeRequest(0, TimeUnit.SECONDS) shouldNotBeNull {
+                body shouldNotBeNull {
+                    val body = string(Charsets.UTF_8)
+                    val promptIdx = body.indexOf("Explain this bug")
+                    promptIdx shouldNotBe -1
+                    val codeIdx = body.indexOf("## CODE ##")
+                    val ctxIdx = body.indexOf("## CONTEXT: ${ctxFile.fileName} ##")
+                    // Order: prompt ? CODE ? CONTEXT
+                    promptIdx shouldBeLessThan codeIdx
+                    codeIdx shouldBeLessThan ctxIdx
+                    body.shouldContain("Stack trace here")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `--context works with diff scope`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("App.java"), "public class App {}\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+        Files.write(gitDir.resolve("App.java"), "public class App { int x; }\n".toByteArray())
+
+        val ctxFile = createTempFile("design", ".md")
+        Files.write(ctxFile, "Design doc content\n".toByteArray())
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder()
+                    .code(200)
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}""")
+                    .build()
+            )
+
+            CommandLine(AidCommand()).execute(
+                "-d", gitDir.absolutePathString(),
+                "-m", "test",
+                "-s", "diff",
+                "-u", llmServer.url("/").toString(),
+                "--context", ctxFile.absolutePathString(),
+            )
+
+            llmServer.takeRequest(0, TimeUnit.SECONDS) shouldNotBeNull {
+                body shouldNotBeNull {
+                    string(Charsets.UTF_8)
+                        .shouldContain("App.java")
+                        .shouldContain("## CONTEXT: ${ctxFile.fileName} ##")
+                        .shouldContain("Design doc content")
+                }
+            }
         }
     }
 }

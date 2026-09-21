@@ -88,3 +88,7 @@ All notable changes to this project will be documented in this file.
 ## [1.17.0] - 2026-09-15
 ### Added
 - Added `--print-args` flag to print all parsed command-line arguments to stderr. The `--api-key` value is masked as `********`.
+
+## [1.18.0] - 2026-09-21
+### Added
+- Added `--context` option (repeatable) to attach supplementary non-code files (bug reports, stack traces, design docs). Each file's content is appended to the user message after the code. Works with all scopes and combines with a custom prompt (`-p`).

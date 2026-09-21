@@ -154,13 +154,21 @@ class LlmClient(val config: Config) {
     data class Prompt(
         val systemMessage: String?,
         val userMessage: String?,
-        val code: String
+        val code: String,
+        val contextSections: List<Pair<String, String>> = emptyList(),
     ) {
         val combinedUserMessage: String
-            get() = if (userMessage != null) {
-                "$userMessage\n\n## CODE ##\n$code"
-            } else {
-                code
+            get() {
+                val base = if (userMessage != null) {
+                    "$userMessage\n\n## CODE ##\n$code"
+                } else {
+                    code
+                }
+                if (contextSections.isEmpty()) return base
+                val context = contextSections.joinToString("\n\n") { (name, content) ->
+                    "## CONTEXT: $name ##\n$content"
+                }
+                return "$base\n\n$context"
             }
     }
 

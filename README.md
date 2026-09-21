@@ -15,6 +15,7 @@ A lightweight CLI code assistant that leverages local Ollama instances (or any O
 - **Configurable diff context**: Control surrounding lines in diff output with `--context-lines` (`-U`).
 - **Reasoning output**: Include the model's internal reasoning in the result with `--reasoning` (rendered as a Markdown blockquote).
 - **Argument inspection**: Print all parsed CLI arguments to stderr with `--print-args` (API key is masked).
+- **Supplementary context files**: Attach bug reports, stack traces, or design docs with `--context` (repeatable); content is appended to the LLM prompt after the code.
 
 ## Prerequisites
 
@@ -73,6 +74,14 @@ export AID_API_KEY=<key>
 ```sh
 ./aid -d=<repo_path> -m=<model_name> -s=diff -u=<api_url> --reasoning > <output_path>
 ```
+
+### Attach supplementary context files
+Provide bug reports, stack traces, or design documents alongside the code:
+
+```sh
+./aid -d=<repo_path> -m=<model_name> -s=diff -u=<api_url> \
+    --context issue-42.md --context stacktrace.txt > <output_path>
+```    
 
 ### Arguments from files
 Store frequently-used option sets in a plain-text file and reference them with the `@` prefix.

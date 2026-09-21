@@ -1,8 +1,11 @@
 package dev.sz.aid
 
 import picocli.CommandLine
+import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
+import kotlin.io.path.exists
+import kotlin.io.path.readText
 
 @CommandLine.Command(
     name = "aid",
@@ -255,6 +258,18 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
     var printArgs: Boolean = false
         private set
 
+    @CommandLine.Option(
+        names = ["--context"],
+        required = false,
+        description = [
+            "Path to a supplementary context file (repeatable).",
+            "Content is appended to the user message after the",
+            "code.",
+        ],
+    )
+    var contextFiles = emptyList<Path>()
+        private set
+
     override fun run() {
         if (printArgs) printParsedArgs()
         ProgressLogger(enabled = progress).use { progressLogger ->
@@ -309,7 +324,12 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
             baseSystemMessage ?: langDirective
         }
         val userMessage: String? = promptPath?.let { Prompts.readUserPrompt(it) }
-        return LlmClient.Prompt(systemMessage, userMessage, code)
+        val contextSections = contextFiles.map { path ->
+            require(path.exists()) { "Context file does not exist: $path" }
+            require(Files.isRegularFile(path)) { "Not a regular file: $path" }
+            path.fileName.toString() to path.readText(Charsets.UTF_8).trim()
+        }
+        return LlmClient.Prompt(systemMessage, userMessage, code, contextSections)
     }
 
     private fun logCode(code: String) {
@@ -343,6 +363,7 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
         System.err.println("  --reasoning = $includeReasoning")
         System.err.println("  --prompt-version = $promptVersion")
         System.err.println("  --print-args = $printArgs")
+        System.err.println("  --context = $contextFiles")
     }
 
     private fun LlmClient.renderDryRun(prompt: LlmClient.Prompt, progressLogger: ProgressLogger) {

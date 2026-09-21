@@ -439,4 +439,32 @@ class LlmClientTest {
             client.chat(LlmClient.Prompt("sys", null, "code"))
         }.message.shouldContain("requires at least one of content or reasoningContent")
     }
+
+    @Test
+    fun `Prompt combinedUserMessage with no userMessage and no context returns code`() {
+        val prompt = LlmClient.Prompt(null, null, "my code")
+        prompt.combinedUserMessage shouldBe "my code"
+    }
+
+    @Test
+    fun `Prompt combinedUserMessage with userMessage and no context`() {
+        val prompt = LlmClient.Prompt("sys", "Do something", "my code")
+        prompt.combinedUserMessage shouldBe "Do something\n\n## CODE ##\nmy code"
+    }
+
+    @Test
+    fun `Prompt combinedUserMessage with context but no userMessage`() {
+        val prompt = LlmClient.Prompt(null, null, "my code", listOf("issue.md" to "Bug description"))
+        prompt.combinedUserMessage shouldBe "my code\n\n## CONTEXT: issue.md ##\nBug description"
+    }
+
+    @Test
+    fun `Prompt combinedUserMessage with userMessage and multiple context files`() {
+        val prompt = LlmClient.Prompt(
+            "sys", "Explain", "code here",
+            listOf("a.md" to "Content A", "b.txt" to "Content B")
+        )
+        prompt.combinedUserMessage shouldBe
+                "Explain\n\n## CODE ##\ncode here\n\n## CONTEXT: a.md ##\nContent A\n\n## CONTEXT: b.txt ##\nContent B"
+    }
 }
