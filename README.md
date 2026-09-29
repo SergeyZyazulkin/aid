@@ -16,6 +16,7 @@ A lightweight CLI code assistant that leverages local Ollama instances (or any O
 - **Reasoning output**: Include the model's internal reasoning in the result with `--reasoning` (rendered as a Markdown blockquote).
 - **Argument inspection**: Print all parsed CLI arguments to stderr with `--print-args` (API key is masked).
 - **Supplementary context files**: Attach bug reports, stack traces, or design docs with `--context` (repeatable); content is appended to the LLM prompt after the code.
+- **Interactive mode**: Follow up on a review or Q&A session with `--interactive` (`-i`); the full conversation history is maintained across turns.
 
 ## Prerequisites
 
@@ -82,6 +83,18 @@ Provide bug reports, stack traces, or design documents alongside the code:
 ./aid -d=<repo_path> -m=<model_name> -s=diff -u=<api_url> \
     --context issue-42.md --context stacktrace.txt > <output_path>
 ```    
+
+### Interactive follow-up session
+Get a review, then ask follow-up questions without re-sending the code:
+
+```sh
+./aid -d=<repo_path> -m=<model_name> -s=all -u=<api_url> -i --stream --max-turns 10 > <output_path>
+```
+
+After the initial response, a `prompt>` prompt appears. 
+Type your question and press Enter. 
+Type /exit or press Ctrl-D (Ctrl-Z and Enter on Windows) to end the session. 
+Use --max-turns to cap the number of turns (default 20).
 
 ### Arguments from files
 Store frequently-used option sets in a plain-text file and reference them with the `@` prefix.

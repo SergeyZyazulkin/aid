@@ -150,4 +150,77 @@ class ProgressLoggerTest {
         lines.count { it.contains("Step B") } shouldBe 1
         lines.indexOfLast { it.contains("Step A") } shouldBeGreaterThan lines.indexOfLast { it.contains("Step B") }
     }
+
+    @Test
+    fun `progress with startWaiting=false logs message but does not emit Waiting`() {
+        val buf = ByteArrayOutputStream()
+        val out = PrintStream(buf, true, Charsets.UTF_8)
+        ProgressLogger(enabled = true, out = out, waitIntervalSec = 1).use {
+            it.progress("Step one", startWaiting = false)
+            Thread.sleep(2_000)
+        }
+        String(buf.toByteArray(), Charsets.UTF_8)
+            .shouldContain("Step one")
+            .shouldNotContain("Waiting...")
+    }
+
+    @Test
+    fun `startWaiting=true followed by startWaiting=false stops the waiting indicator`() {
+        val buf = ByteArrayOutputStream()
+        val out = PrintStream(buf, true, Charsets.UTF_8)
+        ProgressLogger(enabled = true, out = out, waitIntervalSec = 1).use { logger ->
+            logger.progress("Collecting", startWaiting = true)
+            Thread.sleep(2_100)
+            // Switch to a non-waiting step
+            logger.progress("Building prompt", startWaiting = false)
+            Thread.sleep(2_000)
+        }
+        val output = String(buf.toByteArray(), Charsets.UTF_8)
+        output.shouldContain("Collecting")
+            .shouldContain("Waiting...")
+            .shouldContain("Building prompt")
+
+        // "Waiting..." should appear only after "Collecting", not after "Building prompt"
+        output.substring(output.indexOf("Building prompt"))
+            .contains("Waiting...") shouldBe false
+    }
+
+    @Test
+    fun `startWaiting=false then startWaiting=true restarts the waiting indicator`() {
+        val buf = ByteArrayOutputStream()
+        val out = PrintStream(buf, true, Charsets.UTF_8)
+        ProgressLogger(enabled = true, out = out, waitIntervalSec = 1).use { logger ->
+            logger.progress("Quick step", startWaiting = false)
+            Thread.sleep(2_000)
+            logger.progress("Long step", startWaiting = true)
+            Thread.sleep(2_000)
+        }
+        val output = String(buf.toByteArray(), Charsets.UTF_8)
+        output.shouldContain("Quick step")
+            .shouldContain("Long step")
+            .shouldContain("Waiting...")
+
+        // No "Waiting..." between "Quick step" and "Long step"
+        val quickIdx = output.indexOf("Quick step")
+        val longIdx = output.indexOf("Long step")
+        val between = output.substring(quickIdx, longIdx)
+        between.shouldNotContain("Waiting...")
+    }
+
+    @Test
+    fun `same message with different startWaiting is deduplicated`() {
+        val buf = ByteArrayOutputStream()
+        val out = PrintStream(buf, true, Charsets.UTF_8)
+        ProgressLogger(enabled = true, out = out, waitIntervalSec = 1).use { logger ->
+            logger.progress("Same message", startWaiting = true)
+            // Same message, different startWaiting � should be a no-op
+            logger.progress("Same message", startWaiting = false)
+            Thread.sleep(2_000)
+        }
+
+        val output = String(buf.toByteArray(), Charsets.UTF_8)
+        (output.split("Same message").size - 1) shouldBe 1
+        // Waiting was started by the first call and was NOT stopped by the second (no-op)
+        output.shouldContain("Waiting...")
+    }
 }

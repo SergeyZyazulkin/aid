@@ -36,13 +36,13 @@ class ProgressLogger(
 
     /**
      * If [message] differs from the previous call,
-     * logs [message] and (re)starts the periodic "Waiting..." indicator.
+     * logs [message] and stops or (re)starts the periodic "Waiting..." indicator.
      */
-    fun progress(message: String) {
+    fun progress(message: String, startWaiting: Boolean = true) {
         if (!enabled || message == currentProgress) return
         currentProgress = message
         log(message)
-        scheduleWaitLog()
+        if (startWaiting) scheduleWaitLog() else stopWaitLog()
     }
 
     private fun scheduleWaitLog() {
@@ -52,6 +52,11 @@ class ProgressLogger(
         waitTask = executor.scheduleAtFixedRate({
             log("Waiting... ${waitStartNanos.elapsedSec()}s")
         }, waitIntervalSec, waitIntervalSec, TimeUnit.SECONDS)
+    }
+
+    private fun stopWaitLog() {
+        waitTask?.cancel(false)
+        waitTask = null
     }
 
     override fun close() {

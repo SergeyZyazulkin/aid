@@ -19,6 +19,16 @@ object Prompts {
             .trim()
     }
 
+    fun readInteractivePrompt(): String? {
+        while (true) {
+            System.err.print("prompt> ")
+            val prompt = readlnOrNull()?.trim() ?: return null
+            if (prompt.isEmpty()) continue
+            if (prompt == "/exit") return null
+            return prompt
+        }
+    }
+
     fun readSystemDirective(name: String): String = readSystemPrompt("$DIRECTIVE_DIR/$name")
 
     private fun readSystemPrompt(name: String): String = javaClass

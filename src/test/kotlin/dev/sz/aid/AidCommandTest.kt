@@ -57,6 +57,8 @@ class AidCommandTest {
         cmd.promptVersion shouldBe Prompts.Version.V1
         cmd.printArgs shouldBe false
         cmd.contextFiles shouldBe emptyList()
+        cmd.interactive shouldBe false
+        cmd.maxTurns shouldBe 20
     }
 
     @Test
@@ -211,6 +213,39 @@ class AidCommandTest {
         cmd.contextFiles shouldBe listOf(Paths.get("/path/to/issue.md"), Paths.get("/path/to/trace.txt"))
     }
 
+    @Test
+    fun `parses --interactive flag correctly`() {
+        val cmd = CommandLine.populateCommand(
+            AidCommand(),
+            "-d", "/test/repo",
+            "-m", "llama3",
+            "--interactive",
+        )
+        cmd.interactive shouldBe true
+    }
+
+    @Test
+    fun `parses -i short flag correctly`() {
+        val cmd = CommandLine.populateCommand(
+            AidCommand(),
+            "-d", "/test/repo",
+            "-m", "llama3",
+            "-i",
+        )
+        cmd.interactive shouldBe true
+    }
+
+    @Test
+    fun `parses --max-turns correctly`() {
+        val cmd = CommandLine.populateCommand(
+            AidCommand(),
+            "-d", "/test/repo",
+            "-m", "llama3",
+            "--interactive",
+            "--max-turns", "5",
+        )
+        cmd.maxTurns shouldBe 5
+    }
 
     @Test
     fun `rejects invalid scope`() {
@@ -277,6 +312,19 @@ class AidCommandTest {
                 "--prompt-version", "v99",
             )
         }.message.shouldContain("--prompt-version")
+    }
+
+    @Test
+    fun `rejects invalid --max-turns`() {
+        assertThrows<IllegalArgumentException> {
+            CommandLine.populateCommand(
+                AidCommand(),
+                "--dir", "/test/repo",
+                "--model", "test",
+                "--interactive",
+                "--max-turns", "1",
+            ).run()
+        }.message.shouldContain("--max-turns must be at least 2")
     }
 
     @Test
@@ -2033,6 +2081,368 @@ class AidCommandTest {
                         .shouldContain("App.java")
                         .shouldContain("## CONTEXT: ${ctxFile.fileName} ##")
                         .shouldContain("Design doc content")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `interactive mode sends multi-turn conversation and exits on exit command`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            // Response for turn 1 (initial)
+            llmServer.enqueue(
+                MockResponse.Builder().code(200)
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"First response"}}]}""")
+                    .build()
+            )
+            // Response for turn 2 (follow-up)
+            llmServer.enqueue(
+                MockResponse.Builder().code(200)
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"Second response"}}]}""")
+                    .build()
+            )
+
+            val originalOut = System.out
+            val outBuf = ByteArrayOutputStream()
+            val originalErr = System.err
+            val errBuf = ByteArrayOutputStream()
+            val originalIn = System.`in`
+            try {
+                System.setOut(PrintStream(outBuf, true, Charsets.UTF_8))
+                System.setErr(PrintStream(errBuf, true, Charsets.UTF_8))
+                System.setIn("Explain more\n/exit\n".byteInputStream())
+
+                CommandLine(AidCommand()).execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                    "--interactive",
+                )
+            } finally {
+                System.setOut(originalOut)
+                System.setErr(originalErr)
+                System.setIn(originalIn)
+            }
+
+            String(outBuf.toByteArray(), Charsets.UTF_8)
+                .shouldContain("Turn 1")
+                .shouldContain("First response")
+                .shouldContain("Turn 2")
+                .shouldContain("Second response")
+
+            String(errBuf.toByteArray(), Charsets.UTF_8)
+                .shouldContain("prompt>")
+
+            llmServer.requestCount shouldBe 2
+            llmServer.takeRequest(0, TimeUnit.SECONDS).shouldNotBeNull()
+
+            // Second request should contain the full conversation history
+            llmServer.takeRequest(0, TimeUnit.SECONDS) shouldNotBeNull {
+                body shouldNotBeNull {
+                    string(Charsets.UTF_8)
+                        .shouldContain("First response")
+                        .shouldContain("Explain more")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `interactive mode exits on EOF`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder().code(200)
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"Only response"}}]}""")
+                    .build()
+            )
+
+            val originalOut = System.out
+            val outBuf = ByteArrayOutputStream()
+            val originalIn = System.`in`
+            try {
+                System.setOut(PrintStream(outBuf, true, Charsets.UTF_8))
+                // Empty input ? readLine() returns null immediately (EOF)
+                System.setIn("".byteInputStream())
+
+                CommandLine(AidCommand()).execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                    "--interactive",
+                )
+            } finally {
+                System.setOut(originalOut)
+                System.setIn(originalIn)
+            }
+
+            String(outBuf.toByteArray(), Charsets.UTF_8)
+                .shouldContain("Only response")
+
+            // Only 1 request (initial), no follow-up
+            llmServer.requestCount shouldBe 1
+        }
+    }
+
+    @Test
+    fun `interactive mode with --stream streams each turn`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        fun sseBody(content: String): String = buildString {
+            appendLine("""data: {"id":"1","choices":[{"index":0,"delta":{"role":"assistant","content":"$content"},"finish_reason":"stop"}]}""")
+            appendLine()
+            appendLine("data: [DONE]")
+            appendLine()
+        }
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder().code(200)
+                    .headers(Headers.Builder().add("Content-Type", "text/event-stream").build())
+                    .body(sseBody("Streamed first"))
+                    .build()
+            )
+            llmServer.enqueue(
+                MockResponse.Builder().code(200)
+                    .headers(Headers.Builder().add("Content-Type", "text/event-stream").build())
+                    .body(sseBody("Streamed second"))
+                    .build()
+            )
+
+            val originalOut = System.out
+            val outBuf = ByteArrayOutputStream()
+            val originalIn = System.`in`
+            try {
+                System.setOut(PrintStream(outBuf, true, Charsets.UTF_8))
+                System.setIn("follow-up\n/exit\n".byteInputStream())
+
+                CommandLine(AidCommand()).execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                    "--interactive",
+                    "--stream",
+                )
+            } finally {
+                System.setOut(originalOut)
+                System.setIn(originalIn)
+            }
+
+            String(outBuf.toByteArray(), Charsets.UTF_8)
+                .shouldContain("Turn 1")
+                .shouldContain("Streamed first")
+                .shouldContain("Turn 2")
+                .shouldContain("Streamed second")
+
+            llmServer.requestCount shouldBe 2
+        }
+    }
+
+    @Test
+    fun `interactive mode skips empty lines in REPL`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder().code(200)
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"R1"}}]}""")
+                    .build()
+            )
+            llmServer.enqueue(
+                MockResponse.Builder().code(200)
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"R2"}}]}""")
+                    .build()
+            )
+
+            val originalIn = System.`in`
+            try {
+                // Empty lines should be skipped, only "real question" triggers a request
+                System.setIn("\n\nreal question\n/exit\n".byteInputStream())
+
+                CommandLine(AidCommand()).execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                    "--interactive",
+                )
+            } finally {
+                System.setIn(originalIn)
+            }
+
+            // 2 requests: initial + "real question" (empty lines skipped)
+            llmServer.requestCount shouldBe 2
+        }
+    }
+
+    @Test
+    fun `interactive mode includes system message in all requests`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder().code(200)
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"R1"}}]}""")
+                    .build()
+            )
+            llmServer.enqueue(
+                MockResponse.Builder().code(200)
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"R2"}}]}""")
+                    .build()
+            )
+
+            val originalIn = System.`in`
+            try {
+                System.setIn("q\n/exit\n".byteInputStream())
+
+                CommandLine(AidCommand()).execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                    "--interactive",
+                )
+            } finally {
+                System.setIn(originalIn)
+            }
+
+            llmServer.requestCount shouldBe 2
+
+            llmServer.takeRequest(0, TimeUnit.SECONDS) shouldNotBeNull {
+                body shouldNotBeNull {
+                    string(Charsets.UTF_8)
+                        .shouldContain("\"system\"")
+                }
+            }
+
+            llmServer.takeRequest(0, TimeUnit.SECONDS) shouldNotBeNull {
+                body shouldNotBeNull {
+                    string(Charsets.UTF_8)
+                        .shouldContain("\"system\"")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `--dry-run takes precedence over --interactive`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+
+            val originalOut = System.out
+            val captured = ByteArrayOutputStream()
+            try {
+                System.setOut(PrintStream(captured, true, Charsets.UTF_8))
+
+                CommandLine(AidCommand()).execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                    "--interactive",
+                    "--dry-run",
+                )
+            } finally {
+                System.setOut(originalOut)
+            }
+
+            // Dry-run output: JSON, no REPL
+            String(captured.toByteArray(), Charsets.UTF_8)
+                .shouldStartWith("{")
+                .shouldContain("\"messages\"")
+                .shouldNotContain("Turn")
+
+            // No LLM call was made
+            llmServer.requestCount shouldBe 0
+        }
+    }
+
+    @Test
+    fun `--max-turns stops the interaction`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder().code(200)
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"R1"}}]}""")
+                    .build()
+            )
+            llmServer.enqueue(
+                MockResponse.Builder().code(200)
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"R2"}}]}""")
+                    .build()
+            )
+
+            val originalIn = System.`in`
+            try {
+                System.setIn("prompt_1\nprompt_2\n".byteInputStream())
+
+                CommandLine(AidCommand()).execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                    "--interactive",
+                    "--max-turns", "2",
+                )
+            } finally {
+                System.setIn(originalIn)
+            }
+
+            llmServer.requestCount shouldBe 2
+            llmServer.takeRequest(0, TimeUnit.SECONDS) shouldNotBeNull {
+                body shouldNotBeNull {
+                    string(Charsets.UTF_8)
+                        .shouldNotContain("prompt_")
+                }
+            }
+            llmServer.takeRequest(0, TimeUnit.SECONDS) shouldNotBeNull {
+                body shouldNotBeNull {
+                    string(Charsets.UTF_8)
+                        .shouldContain("prompt_1")
+                        .shouldNotContain("prompt_2")
                 }
             }
         }

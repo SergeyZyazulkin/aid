@@ -1,9 +1,11 @@
 package dev.sz.aid
 
+import io.kotest.matchers.ints.shouldBeLessThan
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkConstructor
@@ -70,12 +72,14 @@ class LlmClientTest {
         }
 
         val client = LlmClient(config)
-        val prompt = LlmClient.Prompt(
-            systemMessage = "You are helpful.",
-            userMessage = null,
-            code = "abc"
+        client.addPrompt(
+            LlmClient.Prompt(
+                systemMessage = "You are helpful.",
+                userMessage = null,
+                code = "abc"
+            )
         )
-        val result = client.chat(prompt)
+        val result = client.chat()
         result.content shouldBe responseMessage
         result.usage shouldBe null
     }
@@ -103,13 +107,15 @@ class LlmClientTest {
         }
 
         val client = LlmClient(config)
-        val prompt = LlmClient.Prompt(
-            systemMessage = "Test",
-            userMessage = null,
-            code = ""
+        client.addPrompt(
+            LlmClient.Prompt(
+                systemMessage = "Test",
+                userMessage = null,
+                code = ""
+            )
         )
         assertThrows<IOException> {
-            client.chat(prompt)
+            client.chat()
         }.message.shouldContain("LLM HTTP 401 Unauthorized")
     }
 
@@ -151,10 +157,8 @@ class LlmClientTest {
 
         val deltas = mutableListOf<String>()
         val client = LlmClient(config)
-        client.chatStream(
-            prompt = LlmClient.Prompt("sys", null, "code"),
-            onDelta = { deltas.add(it) },
-        )
+        client.addPrompt(LlmClient.Prompt("sys", null, "code"))
+        client.chatStream(onDelta = { deltas.add(it) })
         deltas shouldBe listOf("Hel", "lo")
     }
 
@@ -181,11 +185,9 @@ class LlmClientTest {
         }
 
         val client = LlmClient(config)
+        client.addPrompt(LlmClient.Prompt("sys", null, "code"))
         assertThrows<IOException> {
-            client.chatStream(
-                prompt = LlmClient.Prompt("sys", null, "code"),
-                onDelta = {},
-            )
+            client.chatStream(onDelta = {})
         }.message.shouldContain("LLM HTTP 500")
     }
 
@@ -224,11 +226,9 @@ class LlmClientTest {
         }
 
         val client = LlmClient(config)
+        client.addPrompt(LlmClient.Prompt("sys", null, "code"))
         assertThrows<IllegalStateException> {
-            client.chatStream(
-                prompt = LlmClient.Prompt("sys", null, "code"),
-                onDelta = {},
-            )
+            client.chatStream(onDelta = {})
         }.message.shouldContain("Invalid LLM data: {not a valid json}")
     }
 
@@ -260,11 +260,9 @@ class LlmClientTest {
         }
 
         val client = LlmClient(config)
+        client.addPrompt(LlmClient.Prompt("sys", null, "code"))
         assertThrows<IOException> {
-            client.chatStream(
-                prompt = LlmClient.Prompt("sys", null, "code"),
-                onDelta = {},
-            )
+            client.chatStream(onDelta = {})
         }.message.shouldContain("Expected SSE stream but got Content-Type: text/plain\nBody: body")
     }
 
@@ -306,10 +304,8 @@ class LlmClientTest {
 
         val deltas = mutableListOf<String>()
         val client = LlmClient(config)
-        client.chatStream(
-            prompt = LlmClient.Prompt("sys", null, "code"),
-            onDelta = { deltas.add(it) },
-        )
+        client.addPrompt(LlmClient.Prompt("sys", null, "code"))
+        client.chatStream(onDelta = { deltas.add(it) })
         deltas shouldBe emptyList()
     }
 
@@ -352,7 +348,8 @@ class LlmClientTest {
         }
 
         val client = LlmClient(config)
-        val result = client.chat(LlmClient.Prompt("sys", null, "code"))
+        client.addPrompt(LlmClient.Prompt("sys", null, "code"))
+        val result = client.chat()
         result.content shouldBe "hello"
         result.usage?.promptTokens shouldBe 42
         result.usage?.completionTokens shouldBe 7
@@ -399,10 +396,8 @@ class LlmClientTest {
         }
 
         val client = LlmClient(config)
-        val usage: Usage? = client.chatStream(
-            prompt = LlmClient.Prompt("sys", null, "code"),
-            onDelta = {},
-        )
+        client.addPrompt(LlmClient.Prompt("sys", null, "code"))
+        val usage: Usage? = client.chatStream(onDelta = {})
         usage.shouldNotBeNull()
         usage.promptTokens shouldBe 122
         usage.completionTokens shouldBe 17
@@ -419,7 +414,8 @@ class LlmClientTest {
             connectTimeoutSec = 5,
             readTimeoutSec = 60,
         )
-        val mockResponseBody = """{"choices":[{"index":0,"message":{"role":"assistant","content":null,"reasoning_content":null}}]}"""
+        val mockResponseBody =
+            """{"choices":[{"index":0,"message":{"role":"assistant","content":null,"reasoning_content":null}}]}"""
 
         val mockCall = mockk<Call>()
         mockkConstructor(OkHttpClient::class)
@@ -435,8 +431,9 @@ class LlmClientTest {
         }
 
         val client = LlmClient(config)
+        client.addPrompt(LlmClient.Prompt("sys", null, "code"))
         assertThrows<IllegalArgumentException> {
-            client.chat(LlmClient.Prompt("sys", null, "code"))
+            client.chat()
         }.message.shouldContain("requires at least one of content or reasoningContent")
     }
 
@@ -466,5 +463,180 @@ class LlmClientTest {
         )
         prompt.combinedUserMessage shouldBe
                 "Explain\n\n## CODE ##\ncode here\n\n## CONTEXT: a.md ##\nContent A\n\n## CONTEXT: b.txt ##\nContent B"
+    }
+
+    @Test
+    fun `addPrompt with system message and code produces system and user messages`() {
+        val client = LlmClient(
+            LlmClient.Config(
+                url = "http://localhost:1234",
+                model = "test-model",
+                connectTimeoutSec = 5,
+                readTimeoutSec = 60,
+            )
+        )
+        client.addPrompt(
+            LlmClient.Prompt(
+                systemMessage = "You are a reviewer.",
+                userMessage = null,
+                code = "fun main() {}",
+            )
+        )
+
+        client.dryRun(isStream = false)
+            .shouldContain("\"role\": \"system\"")
+            .shouldContain("You are a reviewer.")
+            .shouldContain("\"role\": \"user\"")
+            .shouldContain("fun main() {}")
+    }
+
+    @Test
+    fun `addPrompt with null system message produces only user message`() {
+        val client = LlmClient(
+            LlmClient.Config(
+                url = "http://localhost:1234",
+                model = "test-model",
+                connectTimeoutSec = 5,
+                readTimeoutSec = 60,
+            )
+        )
+        client.addPrompt(
+            LlmClient.Prompt(
+                systemMessage = null,
+                userMessage = "Explain this",
+                code = "val x = 1",
+            )
+        )
+
+        client.dryRun(isStream = false)
+            .shouldNotContain("\"role\": \"system\"")
+            .shouldContain("\"role\": \"user\"")
+            .shouldContain("Explain this")
+            .shouldContain("## CODE ##")
+            .shouldContain("val x = 1")
+    }
+
+    @Test
+    fun `addPrompt with null code and null userMessage produces empty user message`() {
+        val client = LlmClient(
+            LlmClient.Config(
+                url = "http://localhost:1234",
+                model = "test-model",
+                connectTimeoutSec = 5,
+                readTimeoutSec = 60,
+            )
+        )
+        client.addPrompt(
+            LlmClient.Prompt(
+                systemMessage = "sys",
+                userMessage = null,
+                code = null,
+            )
+        )
+
+        client.dryRun(isStream = false)
+            .shouldContain("\"role\": \"system\"")
+            .shouldContain("\"role\": \"user\"")
+            .shouldContain("\"content\": \"\"")
+    }
+
+    @Test
+    fun `addPrompt with context sections includes them in user message`() {
+        val client = LlmClient(
+            LlmClient.Config(
+                url = "http://localhost:1234",
+                model = "test-model",
+                connectTimeoutSec = 5,
+                readTimeoutSec = 60,
+            )
+        )
+        client.addPrompt(
+            LlmClient.Prompt(
+                systemMessage = null,
+                userMessage = null,
+                code = "code here",
+                contextSections = listOf("issue.md" to "Bug description"),
+            )
+        )
+
+        client.dryRun(isStream = false)
+            .shouldContain("code here")
+            .shouldContain("## CONTEXT: issue.md ##")
+            .shouldContain("Bug description")
+    }
+
+    @Test
+    fun `multiple addPrompt calls accumulate messages in order`() {
+        val client = LlmClient(
+            LlmClient.Config(
+                url = "http://localhost:1234",
+                model = "test-model",
+                connectTimeoutSec = 5,
+                readTimeoutSec = 60,
+            )
+        )
+        client.addPrompt(LlmClient.Prompt("system-1", null, "first code"))
+        client.addPrompt(LlmClient.Prompt(null, "follow-up question", null))
+
+        val body = client.dryRun(isStream = false)
+
+        // Both system and user messages from first prompt
+        body.shouldContain("system-1")
+            .shouldContain("first code")
+            // Second prompt: no system, user with follow-up
+            .shouldContain("follow-up question")
+
+        // Verify ordering: system-1 appears before "first code", which appears before "follow-up question"
+        val sysIdx = body.indexOf("system-1")
+        val firstCodeIdx = body.indexOf("first code")
+        val followUpIdx = body.indexOf("follow-up question")
+        sysIdx shouldBeLessThan firstCodeIdx
+        firstCodeIdx shouldBeLessThan followUpIdx
+    }
+
+    @Test
+    fun `addPrompt with null code and userMessage only produces user message with prompt text`() {
+        val client = LlmClient(
+            LlmClient.Config(
+                url = "http://localhost:1234",
+                model = "test-model",
+                connectTimeoutSec = 5,
+                readTimeoutSec = 60,
+            )
+        )
+        client.addPrompt(
+            LlmClient.Prompt(
+                systemMessage = null,
+                userMessage = "Just a question",
+                code = null,
+            )
+        )
+
+        client.dryRun(isStream = false)
+            .shouldContain("Just a question")
+            .shouldNotContain("## CODE ##")
+    }
+
+    @Test
+    fun `addPrompt with code but no userMessage sends code without header`() {
+        val client = LlmClient(
+            LlmClient.Config(
+                url = "http://localhost:1234",
+                model = "test-model",
+                connectTimeoutSec = 5,
+                readTimeoutSec = 60,
+            )
+        )
+        client.addPrompt(
+            LlmClient.Prompt(
+                systemMessage = null,
+                userMessage = null,
+                code = "int x = 5;",
+            )
+        )
+
+        client.dryRun(isStream = false)
+            .shouldNotContain("## CODE ##")
+            .shouldContain("int x = 5;")
     }
 }

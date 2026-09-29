@@ -270,8 +270,35 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
     var contextFiles = emptyList<Path>()
         private set
 
+    @CommandLine.Option(
+        names = ["-i", "--interactive"],
+        required = false,
+        defaultValue = "false",
+        description = [
+            "Interactive mode: after the initial response,",
+            "enter a REPL for follow-up questions; type /exit",
+            "or press Ctrl-D (Ctrl-Z and Enter on Windows) to",
+            "end the session",
+        ],
+    )
+    var interactive: Boolean = false
+        private set
+
+    @CommandLine.Option(
+        names = ["--max-turns"],
+        required = false,
+        defaultValue = "20",
+        description = [
+            "Maximum conversation turns in interactive mode",
+            "(default: 20); the initial request counts as turn 1",
+        ],
+    )
+    var maxTurns: Int = 20
+        private set
+
     override fun run() {
         if (printArgs) printParsedArgs()
+        require(!interactive || maxTurns >= 2) { "--max-turns must be at least 2" }
         ProgressLogger(enabled = progress).use { progressLogger ->
             val resolvedApiKey = apiKey ?: environment["AID_API_KEY"]
 
@@ -282,7 +309,8 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
                 readTimeoutSec = readTimeoutSec,
                 forceThinking = forceThinking,
                 apiKey = resolvedApiKey,
-                requestStreamUsage = usage
+                requestStreamUsage = usage,
+                addAssistantResponseToHistory = interactive,
             )
 
             progressLogger.progress("Collecting code...")
@@ -294,11 +322,35 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
             val prompt: LlmClient.Prompt = buildPrompt(code)
 
             val client = LlmClient(config)
-            when {
-                dryRun -> client.renderDryRun(prompt, progressLogger)
-                stream -> client.renderStreamChat(prompt, progressLogger)
-                else -> client.renderChat(prompt, progressLogger)
-            }
+            var turns = 0
+            do {
+                turns++
+                if (turns == 1) {
+                    client.addPrompt(prompt)
+                } else {
+                    progressLogger.progress("Requesting prompt...", startWaiting = false)
+                    val interactivePrompt = Prompts.readInteractivePrompt()
+                        ?.let { LlmClient.Prompt(null, it, null, emptyList()) }
+                        ?: return
+                    client.addPrompt(interactivePrompt)
+                    println() // visual separator from previous turn's output
+                }
+                if (interactive && !dryRun) {
+                    println("## Turn $turns")
+                    println()
+                }
+                when {
+                    dryRun -> {
+                        client.renderDryRun(progressLogger)
+                        return // do not continue
+                    }
+
+                    stream -> client.renderStreamChat(progressLogger)
+                    else -> client.renderChat(progressLogger)
+                }
+                if (!interactive) return
+            } while (turns < maxTurns)
+            System.err.println("[INFO] Max turns ($maxTurns) reached. Session ended.")
         }
     }
 
@@ -364,19 +416,20 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
         System.err.println("  --prompt-version = $promptVersion")
         System.err.println("  --print-args = $printArgs")
         System.err.println("  --context = $contextFiles")
+        System.err.println("  --interactive = $interactive")
+        System.err.println("  --max-turns = $maxTurns")
     }
 
-    private fun LlmClient.renderDryRun(prompt: LlmClient.Prompt, progressLogger: ProgressLogger) {
-        val result = renderDryRun(prompt, stream)
+    private fun LlmClient.renderDryRun(progressLogger: ProgressLogger) {
+        val result = dryRun(stream)
         progressLogger.progress("Printing result...")
         println(result)
     }
 
-    private fun LlmClient.renderStreamChat(prompt: LlmClient.Prompt, progressLogger: ProgressLogger) {
+    private fun LlmClient.renderStreamChat(progressLogger: ProgressLogger) {
         progressLogger.progress("Sending streaming request to LLM...")
         val resultWriter = ResultWriter()
         val chatUsage: Usage? = chatStream(
-            prompt,
             onDelta = { delta ->
                 // Relies on ProgressLogger deduplication to avoid re-logging on every delta
                 progressLogger.progress("Printing result...")
@@ -392,9 +445,9 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
         if (usage) printUsage(chatUsage)
     }
 
-    private fun LlmClient.renderChat(prompt: LlmClient.Prompt, progressLogger: ProgressLogger) {
+    private fun LlmClient.renderChat(progressLogger: ProgressLogger) {
         progressLogger.progress("Sending request to LLM...")
-        val result = chat(prompt)
+        val result = chat()
         val resultWriter = ResultWriter()
         if (includeReasoning) {
             result.reasoningContent?.let {

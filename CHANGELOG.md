@@ -92,3 +92,9 @@ All notable changes to this project will be documented in this file.
 ## [1.18.0] - 2026-09-21
 ### Added
 - Added `--context` option (repeatable) to attach supplementary non-code files (bug reports, stack traces, design docs). Each file's content is appended to the user message after the code. Works with all scopes and combines with a custom prompt (`-p`).
+
+## [1.19.0] - 2026-09-29
+### Added
+- Added `-i`/`--interactive` flag: after the initial LLM response, enters a REPL loop where the user can type follow-up questions. The full conversation history (system + code + prior turns) is sent with each request. Type `/exit` or press Ctrl-D (Ctrl-Z and Enter on Windows) to end the session.
+- Added `--max-turns N` option (default 20) to limit the number of conversation turns in interactive mode.
+- Interactive mode works with `--stream` (token-by-token output per turn), `--reasoning`, `--prompt`, and other existing options.

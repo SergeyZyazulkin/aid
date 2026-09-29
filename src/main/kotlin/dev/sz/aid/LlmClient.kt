@@ -34,8 +34,15 @@ class LlmClient(val config: Config) {
         }
     }
 
-    fun chat(prompt: Prompt): ChatResult {
-        val request: Request = buildChatRequest(prompt, stream = false)
+    private val messages: MutableList<ChatCompletionRequest.ChatMessage> = mutableListOf()
+
+    fun addPrompt(prompt: Prompt) {
+        prompt.systemMessage?.let { messages.add(ChatCompletionRequest.ChatMessage("system", it)) }
+        messages.add(ChatCompletionRequest.ChatMessage("user", prompt.combinedUserMessage))
+    }
+
+    fun chat(): ChatResult {
+        val request: Request = buildChatRequest(stream = false)
 
         val responseBody = httpClient.newCall(request).execute().use { response ->
             val body = response.body.string() // body is guaranteed to be non-null in any case
@@ -50,6 +57,8 @@ class LlmClient(val config: Config) {
         val message: ChatCompletionResponse.Choice.ChatMessage = response.choices.firstOrNull()?.message
             ?: throw IOException("No LLM response message: $responseBody")
 
+        addAssistantResponse(message.content ?: "")
+
         return ChatResult(
             content = message.content,
             reasoningContent = message.reasoningContent?.takeIf { it.isNotEmpty() },
@@ -58,12 +67,12 @@ class LlmClient(val config: Config) {
     }
 
     fun chatStream(
-        prompt: Prompt,
         onDelta: (String) -> Unit,
         onReasoningDelta: ((String) -> Unit)? = null,
     ): Usage? {
-        val request: Request = buildChatRequest(prompt, stream = true)
+        val request: Request = buildChatRequest(stream = true)
         var usage: Usage? = null
+        val assistantMessage: StringBuilder? = if (config.addAssistantResponseToHistory) StringBuilder() else null
 
         httpClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
@@ -87,7 +96,10 @@ class LlmClient(val config: Config) {
 
                     val delta: ChatCompletionStreamResponse.StreamDelta? = chunk.choices.firstOrNull()?.delta
                     val content: String? = delta?.content
-                    if (!content.isNullOrEmpty()) onDelta(content)
+                    if (!content.isNullOrEmpty()) {
+                        onDelta(content)
+                        assistantMessage?.append(content)
+                    }
 
                     val reasoning: String? = delta?.reasoningContent
                     if (!reasoning.isNullOrEmpty()) onReasoningDelta?.invoke(reasoning)
@@ -97,6 +109,7 @@ class LlmClient(val config: Config) {
             }
         }
 
+        addAssistantResponse(assistantMessage?.toString())
         return usage
     }
 
@@ -111,8 +124,8 @@ class LlmClient(val config: Config) {
         }
     }
 
-    private fun buildChatRequest(prompt: Prompt, stream: Boolean): Request {
-        val requestModel: ChatCompletionRequest = prompt.toRequest(stream)
+    private fun buildChatRequest(stream: Boolean): Request {
+        val requestModel: ChatCompletionRequest = buildChatRequestModel(stream)
         val requestJson = json.encodeToString(requestModel)
         val baseUrl = config.url.removeSuffix("/")
 
@@ -127,8 +140,35 @@ class LlmClient(val config: Config) {
             .build()
     }
 
-    fun renderDryRun(prompt: Prompt, isStream: Boolean): String =
-        prettyJson.encodeToString(prompt.toRequest(isStream))
+    fun dryRun(isStream: Boolean): String = prettyJson.encodeToString(buildChatRequestModel(isStream))
+
+    private fun buildChatRequestModel(stream: Boolean): ChatCompletionRequest {
+        val thinkingConfig: ChatCompletionRequest.ExtraBody? = if (config.forceThinking) {
+            ChatCompletionRequest.ExtraBody(
+                enableThinking = true,
+                thinkingBudget = 512,
+                preserveThinking = true,
+            )
+        } else null
+
+        val streamOptions: ChatCompletionRequest.StreamOptions? = if (stream && config.requestStreamUsage) {
+            ChatCompletionRequest.StreamOptions(includeUsage = true)
+        } else null
+
+        return ChatCompletionRequest(
+            model = config.model,
+            messages = messages,
+            stream = stream,
+            extraBody = thinkingConfig,
+            streamOptions = streamOptions,
+        )
+    }
+
+    private fun addAssistantResponse(response: String?) {
+        if (config.addAssistantResponseToHistory) {
+            response?.let { messages.add(ChatCompletionRequest.ChatMessage("assistant", it)) }
+        }
+    }
 
     data class Config(
         val url: String,
@@ -138,6 +178,7 @@ class LlmClient(val config: Config) {
         val forceThinking: Boolean = false,
         val apiKey: String? = null,
         val requestStreamUsage: Boolean = false,
+        val addAssistantResponseToHistory: Boolean = false,
     ) {
         init {
             try {
@@ -154,48 +195,23 @@ class LlmClient(val config: Config) {
     data class Prompt(
         val systemMessage: String?,
         val userMessage: String?,
-        val code: String,
+        val code: String?,
         val contextSections: List<Pair<String, String>> = emptyList(),
     ) {
         val combinedUserMessage: String
-            get() {
-                val base = if (userMessage != null) {
-                    "$userMessage\n\n## CODE ##\n$code"
-                } else {
-                    code
+            get() = buildString {
+                userMessage?.let { append(it) }
+                code?.let {
+                    if (isNotEmpty()) append("\n\n## CODE ##\n")
+                    append(it)
                 }
-                if (contextSections.isEmpty()) return base
-                val context = contextSections.joinToString("\n\n") { (name, content) ->
-                    "## CONTEXT: $name ##\n$content"
+                if (contextSections.isNotEmpty()) {
+                    if (isNotEmpty()) append("\n\n")
+                    val context = contextSections.joinToString("\n\n") { (name, content) ->
+                        "## CONTEXT: $name ##\n$content"
+                    }
+                    append(context)
                 }
-                return "$base\n\n$context"
             }
-    }
-
-    private fun Prompt.toRequest(stream: Boolean): ChatCompletionRequest {
-        val chatMessages: List<ChatCompletionRequest.ChatMessage> = buildList {
-            systemMessage?.let { add(ChatCompletionRequest.ChatMessage("system", it)) }
-            add(ChatCompletionRequest.ChatMessage("user", combinedUserMessage))
-        }
-
-        val thinkingConfig: ChatCompletionRequest.ExtraBody? = if (config.forceThinking) {
-            ChatCompletionRequest.ExtraBody(
-                enableThinking = true,
-                thinkingBudget = 512,
-                preserveThinking = true,
-            )
-        } else null
-
-        val streamOptions: ChatCompletionRequest.StreamOptions? = if (stream && config.requestStreamUsage) {
-            ChatCompletionRequest.StreamOptions(includeUsage = true)
-        } else null
-
-        return ChatCompletionRequest(
-            model = config.model,
-            messages = chatMessages,
-            stream = stream,
-            extraBody = thinkingConfig,
-            streamOptions = streamOptions,
-        )
     }
 }
