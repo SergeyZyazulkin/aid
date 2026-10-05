@@ -24,6 +24,12 @@ data class ChatCompletionRequest(
     val model: String,
     val messages: List<ChatMessage>,
     val stream: Boolean = false,
+    @SerialName("temperature")
+    val temperature: Float? = null,
+    @SerialName("max_tokens")
+    val maxTokens: Int? = null,
+    @SerialName("top_p")
+    val topP: Float? = null,
     @SerialName("extra_body")
     val extraBody: ExtraBody? = null,
     @SerialName("stream_options")

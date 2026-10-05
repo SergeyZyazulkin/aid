@@ -98,3 +98,7 @@ All notable changes to this project will be documented in this file.
 - Added `-i`/`--interactive` flag: after the initial LLM response, enters a REPL loop where the user can type follow-up questions. The full conversation history (system + code + prior turns) is sent with each request. Type `/exit` or press Ctrl-D (Ctrl-Z and Enter on Windows) to end the session.
 - Added `--max-turns N` option (default 20) to limit the number of conversation turns in interactive mode.
 - Interactive mode works with `--stream` (token-by-token output per turn), `--reasoning`, `--prompt`, and other existing options.
+
+## [1.20.0] - 2026-10-05
+### Added
+- Added `--temperature`, `--max-tokens`, `--top-p` options to control LLM sampling parameters. All optional; when omitted the model's default behavior is used.

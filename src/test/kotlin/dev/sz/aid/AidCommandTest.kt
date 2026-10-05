@@ -59,6 +59,9 @@ class AidCommandTest {
         cmd.contextFiles shouldBe emptyList()
         cmd.interactive shouldBe false
         cmd.maxTurns shouldBe 20
+        cmd.temperature shouldBe null
+        cmd.maxTokens shouldBe null
+        cmd.topP shouldBe null
     }
 
     @Test
@@ -248,6 +251,21 @@ class AidCommandTest {
     }
 
     @Test
+    fun `parses sampling options correctly`() {
+        val cmd = CommandLine.populateCommand(
+            AidCommand(),
+            "-d", "/test/repo",
+            "-m", "llama3",
+            "--temperature", "0.1",
+            "--max-tokens", "4096",
+            "--top-p", "0.9",
+        )
+        cmd.temperature shouldBe 0.1f
+        cmd.maxTokens shouldBe 4096
+        cmd.topP shouldBe 0.9f
+    }
+
+    @Test
     fun `rejects invalid scope`() {
         assertThrows<CommandLine.ParameterException> {
             CommandLine.populateCommand(
@@ -325,6 +343,42 @@ class AidCommandTest {
                 "--max-turns", "1",
             ).run()
         }.message.shouldContain("--max-turns must be at least 2")
+    }
+
+    @Test
+    fun `rejects out-of-range temperature`() {
+        assertThrows<IllegalArgumentException> {
+            CommandLine.populateCommand(
+                AidCommand(),
+                "-d", "/test/repo",
+                "-m", "test",
+                "--temperature", "3.0",
+            ).run()
+        }.message.shouldContain("temperature must be in [0, 2]")
+    }
+
+    @Test
+    fun `rejects negative max-tokens`() {
+        assertThrows<IllegalArgumentException> {
+            CommandLine.populateCommand(
+                AidCommand(),
+                "-d", "/test/repo",
+                "-m", "test",
+                "--max-tokens", "-1",
+            ).run()
+        }.message.shouldContain("max_tokens must be positive")
+    }
+
+    @Test
+    fun `rejects out-of-range top-p`() {
+        assertThrows<IllegalArgumentException> {
+            CommandLine.populateCommand(
+                AidCommand(),
+                "-d", "/test/repo",
+                "-m", "test",
+                "--top-p", "1.5",
+            ).run()
+        }.message.shouldContain("top_p must be in [0, 1]")
     }
 
     @Test
@@ -2445,6 +2499,120 @@ class AidCommandTest {
                         .shouldNotContain("prompt_2")
                 }
             }
+        }
+    }
+
+    @Test
+    fun `full run with sampling params includes them in request body`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder()
+                    .code(200)
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}""")
+                    .build()
+            )
+
+            CommandLine(AidCommand())
+                .execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                    "--temperature", "0.1",
+                    "--max-tokens", "4096",
+                    "--top-p", "0.9",
+                )
+
+            llmServer.takeRequest(0, TimeUnit.SECONDS) shouldNotBeNull {
+                body shouldNotBeNull {
+                    string(Charsets.UTF_8)
+                        .shouldContain("\"temperature\":0.1")
+                        .shouldContain("\"max_tokens\":4096")
+                        .shouldContain("\"top_p\":0.9")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `full run without sampling params omits them from request body`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+            llmServer.enqueue(
+                MockResponse.Builder()
+                    .code(200)
+                    .body("""{"choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}""")
+                    .build()
+            )
+
+            CommandLine(AidCommand())
+                .execute(
+                    "-d", gitDir.absolutePathString(),
+                    "-m", "test",
+                    "-s", "all",
+                    "-u", llmServer.url("/").toString(),
+                )
+
+            llmServer.takeRequest(0, TimeUnit.SECONDS) shouldNotBeNull {
+                body shouldNotBeNull {
+                    val body = string(Charsets.UTF_8)
+                    body.shouldNotContain("temperature")
+                        .shouldNotContain("max_tokens")
+                        .shouldNotContain("top_p")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `dry-run with sampling params shows them in JSON`() {
+        val gitDir = createTempDirectory("aid-test-")
+        gitDir.runProcess("git", "init")
+        Files.write(gitDir.resolve("file.txt"), "code\n".toByteArray())
+        gitDir.runProcess("git", "add", ".")
+        gitDir.runProcess("git", "commit", "-m", "init")
+
+        MockWebServer().use { llmServer ->
+            llmServer.start()
+
+            val originalOut = System.out
+            val captured = ByteArrayOutputStream()
+            try {
+                System.setOut(PrintStream(captured, true, Charsets.UTF_8))
+
+                CommandLine(AidCommand())
+                    .execute(
+                        "-d", gitDir.absolutePathString(),
+                        "-m", "test",
+                        "-s", "all",
+                        "-u", llmServer.url("/").toString(),
+                        "--dry-run",
+                        "--temperature", "0.7",
+                        "--max-tokens", "2048",
+                    )
+            } finally {
+                System.setOut(originalOut)
+            }
+
+            String(captured.toByteArray(), Charsets.UTF_8)
+                .shouldContain("\"temperature\": 0.7")
+                .shouldContain("\"max_tokens\": 2048")
+                .shouldNotContain("top_p")
+
+            llmServer.requestCount shouldBe 0
         }
     }
 }

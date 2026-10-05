@@ -17,6 +17,7 @@ A lightweight CLI code assistant that leverages local Ollama instances (or any O
 - **Argument inspection**: Print all parsed CLI arguments to stderr with `--print-args` (API key is masked).
 - **Supplementary context files**: Attach bug reports, stack traces, or design docs with `--context` (repeatable); content is appended to the LLM prompt after the code.
 - **Interactive mode**: Follow up on a review or Q&A session with `--interactive` (`-i`); the full conversation history is maintained across turns.
+- **Sampling control**: Tune LLM output with `--temperature`, `--max-tokens`, `--top-p`.
 
 ## Prerequisites
 

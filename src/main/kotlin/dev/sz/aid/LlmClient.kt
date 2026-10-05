@@ -159,6 +159,9 @@ class LlmClient(val config: Config) {
             model = config.model,
             messages = messages,
             stream = stream,
+            temperature = config.temperature,
+            maxTokens = config.maxTokens,
+            topP = config.topP,
             extraBody = thinkingConfig,
             streamOptions = streamOptions,
         )
@@ -179,6 +182,9 @@ class LlmClient(val config: Config) {
         val apiKey: String? = null,
         val requestStreamUsage: Boolean = false,
         val addAssistantResponseToHistory: Boolean = false,
+        val temperature: Float? = null,
+        val maxTokens: Int? = null,
+        val topP: Float? = null,
     ) {
         init {
             try {
@@ -189,6 +195,9 @@ class LlmClient(val config: Config) {
 
             require(model.isNotBlank()) { "Model cannot be blank" }
             require(connectTimeoutSec > 0 && readTimeoutSec > 0) { "Timeouts must be positive integers" }
+            temperature?.let { require(it in 0f..2f) { "temperature must be in [0, 2]: $it" } }
+            maxTokens?.let { require(it > 0) { "max_tokens must be positive: $it" } }
+            topP?.let { require(it in 0f..1f) { "top_p must be in [0, 1]: $it" } }
         }
     }
 

@@ -296,6 +296,39 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
     var maxTurns: Int = 20
         private set
 
+    @CommandLine.Option(
+        names = ["--temperature"],
+        required = false,
+        description = [
+            "Sampling temperature (0.0-2.0); lower = more",
+            "deterministic (default: omit, model decides)",
+        ],
+    )
+    var temperature: Float? = null
+        private set
+
+    @CommandLine.Option(
+        names = ["--max-tokens"],
+        required = false,
+        description = [
+            "Maximum number of tokens to generate",
+            "(default: omit, model decides)",
+        ],
+    )
+    var maxTokens: Int? = null
+        private set
+
+    @CommandLine.Option(
+        names = ["--top-p"],
+        required = false,
+        description = [
+            "Nucleus sampling threshold (0.0-1.0)",
+            "(default: omit, model decides)",
+        ],
+    )
+    var topP: Float? = null
+        private set
+
     override fun run() {
         if (printArgs) printParsedArgs()
         require(!interactive || maxTurns >= 2) { "--max-turns must be at least 2" }
@@ -311,6 +344,9 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
                 apiKey = resolvedApiKey,
                 requestStreamUsage = usage,
                 addAssistantResponseToHistory = interactive,
+                temperature = temperature,
+                maxTokens = maxTokens,
+                topP = topP,
             )
 
             progressLogger.progress("Collecting code...")
@@ -418,6 +454,9 @@ class AidCommand(private val environment: Environment = SystemEnvironment) : Run
         System.err.println("  --context = $contextFiles")
         System.err.println("  --interactive = $interactive")
         System.err.println("  --max-turns = $maxTurns")
+        System.err.println("  --temperature = $temperature")
+        System.err.println("  --max-tokens = $maxTokens")
+        System.err.println("  --top-p = $topP")
     }
 
     private fun LlmClient.renderDryRun(progressLogger: ProgressLogger) {
